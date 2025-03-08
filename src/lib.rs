@@ -4,10 +4,13 @@ use serde::{Serialize, Deserialize};
 
 // Error handling module
 mod errors;
+// Core cryptographic material module
+mod matter;
 
 // Re-export Error type
 pub use errors::Error;
 pub use errors::Result;
+pub use matter::*;
 
 /// Initialize the KERI library
 pub fn init() -> Result<()> {

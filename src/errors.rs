@@ -14,6 +14,21 @@ pub enum Error {
     #[error("crypto error: {0}")]
     Crypto(String),
     
+    #[error("invalid code: {0}")]
+    InvalidCode(String),
+    
+    #[error("invalid size: {0}")]
+    InvalidSize(String),
+    
+    #[error("empty material")]
+    EmptyMaterial,
+    
+    #[error("raw material error: {0}")]
+    RawMaterial(String),
+    
+    #[error("soft material error: {0}")]
+    SoftMaterial(String),
+    
     #[error("general error: {0}")]
     Other(String),
 }
