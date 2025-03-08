@@ -207,21 +207,91 @@ impl BaseMatter {
     
     // Helper methods for serialization/deserialization
     fn infil(&self) -> Vec<u8> {
-        // Implementation details for creating qb64b from raw and code
-        // This is a placeholder - actual implementation would be more complex
-        let mut result = self.code.as_bytes().to_vec();
-        result.extend_from_slice(&self.raw);
+        // Implementation matching Python _infil logic
+        let code = &self.code;  // hard part of full code
+        let both = format!("{}{}", self.code, self.soft);  // code + soft, soft may be empty
+        let raw = &self.raw;  // raw bytes, may be empty
+        let rs = raw.len();  // raw size
+        
+        // Get size information for the code
+        let sizes = match get_sizes(code) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),  // Return empty on error
+        };
+        
+        let hs = sizes.hs;
+        let ss = sizes.ss;
+        let xs = sizes.xs;
+        let fs = sizes.fs;
+        let ls = sizes.ls;
+        let cs = hs + ss;
+        
+        // Validate code size
+        if cs != both.len() {
+            return Vec::new();  // Return empty on error
+        }
+        
+        let result = if fs.is_none() {  // variable sized
+            // Ensure both full code (B64) and lead+raw (B2) are 24-bit aligned
+            if (ls + rs) % 3 != 0 || cs % 4 != 0 {
+                return Vec::new();  // Return empty on error
+            }
+            
+            // When ls+rs is 24-bit aligned, encodeB64 has no trailing pad chars
+            // Prepad raw with ls zero bytes and convert
+            let mut padded_raw = vec![0u8; ls];
+            padded_raw.extend_from_slice(raw);
+            
+            let mut result = both.as_bytes().to_vec();
+            result.extend_from_slice(&URL_SAFE_NO_PAD.encode(padded_raw).as_bytes());
+            result
+        } else {  // fixed size
+            // Calculate padding needed for 24-bit alignment
+            let ps = (3 - ((rs + ls) % 3)) % 3;  // net pad size given raw with lead
+            
+            // Validate padding size matches code size remainder
+            if ps != (cs % 4) {
+                return Vec::new();  // Return empty on error
+            }
+            
+            // Prepad raw with ps+ls zero bytes to ensure encodeB64 has no trailing pad chars
+            let mut padded_raw = vec![0u8; ps + ls];
+            padded_raw.extend_from_slice(raw);
+            
+            // Encode the padded raw and skip first ps characters
+            let encoded = URL_SAFE_NO_PAD.encode(padded_raw);
+            let encoded_bytes = encoded.as_bytes();
+            let encoded_without_pad = if ps < encoded_bytes.len() {
+                &encoded_bytes[ps..]
+            } else {
+                &[]
+            };
+            
+            let mut result = both.as_bytes().to_vec();
+            result.extend_from_slice(encoded_without_pad);
+            result
+        };
+        
+        // Validate final size
+        if (result.len() % 4 != 0) || (fs.is_some() && result.len() != fs.unwrap()) {
+            return Vec::new();  // Return empty on error
+        }
+        
         result
     }
     
     fn binfil(&self) -> Vec<u8> {
-        // Implementation details for creating qb2 from raw and code
-        // This is a placeholder - actual implementation would be more complex
-        let mut result = Vec::new();
-        // Convert code to binary representation
-        // Add raw bytes
-        result.extend_from_slice(&self.raw);
-        result
+        // Implementation for creating qb2 from code and raw
+        let qb64b = self.infil();
+        if qb64b.is_empty() {
+            return Vec::new();
+        }
+        
+        // Convert base64 to binary
+        match URL_SAFE_NO_PAD.decode(&qb64b) {
+            Ok(bytes) => bytes,
+            Err(_) => Vec::new(),
+        }
     }
     
     fn exfil(&mut self, qb64b: &[u8]) -> Result<()> {
@@ -626,12 +696,36 @@ fn bytes_to_int(bytes: &[u8]) -> usize {
 
 /// Get size information for a derivation code
 fn get_sizes(code: &str) -> Result<Sizage> {
-    // This is a simplified implementation - actual would have a complete table
     match code {
+        // Basic codes
         mtr_dex::ED25519_SEED => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
         mtr_dex::ED25519N => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
         mtr_dex::ED25519 => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
+        mtr_dex::X25519 => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
         mtr_dex::BLAKE3_256 => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
+        mtr_dex::BLAKE2B_256 => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
+        mtr_dex::BLAKE2S_256 => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
+        mtr_dex::SHA3_256 => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
+        mtr_dex::SHA2_256 => Ok(Sizage { hs: 1, ss: 0, xs: 0, fs: Some(44), ls: 0 }),
+        
+        // Fixed size codes from tests
+        mtr_dex::TBD0 => Ok(Sizage { hs: 4, ss: 0, xs: 0, fs: Some(8), ls: 0 }),
+        mtr_dex::TBD1 => Ok(Sizage { hs: 4, ss: 0, xs: 0, fs: Some(8), ls: 1 }),
+        mtr_dex::TBD2 => Ok(Sizage { hs: 4, ss: 0, xs: 0, fs: Some(8), ls: 2 }),
+        mtr_dex::TBD3 => Ok(Sizage { hs: 4, ss: 0, xs: 0, fs: Some(8), ls: 0 }),
+        
+        // Variable size codes from tests
+        mtr_dex::BYTES_L0 => Ok(Sizage { hs: 2, ss: 2, xs: 0, fs: None, ls: 0 }),
+        mtr_dex::BYTES_L1 => Ok(Sizage { hs: 2, ss: 2, xs: 0, fs: None, ls: 1 }),
+        mtr_dex::BYTES_L2 => Ok(Sizage { hs: 2, ss: 2, xs: 0, fs: None, ls: 2 }),
+        
+        // Special codes from tests
+        mtr_dex::TAG3 => Ok(Sizage { hs: 1, ss: 3, xs: 0, fs: Some(4), ls: 0 }),
+        mtr_dex::TBD0S => Ok(Sizage { hs: 4, ss: 2, xs: 0, fs: None, ls: 0 }),
+        
+        // Signature code
+        mtr_dex::ED25519_SIG => Ok(Sizage { hs: 2, ss: 0, xs: 0, fs: Some(88), ls: 0 }),
+        
         _ => Err(Error::InvalidCode(format!("Unknown code: {}", code))),
     }
 }
