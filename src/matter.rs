@@ -803,7 +803,9 @@ mod tests {
         let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
         let matter = BaseMatter::from_qb64(prefix).unwrap();
         assert_eq!(matter.code(), mtr_dex::ED25519N);
-        assert_eq!(matter.qb64(), prefix);
+
+        let result = matter.qb64();
+        assert_eq!(result, prefix);
 
         // Test with full identifier
         let both = format!("{}:mystuff/mypath/toresource?query=what#fragment", prefix);
