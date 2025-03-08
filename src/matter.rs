@@ -848,14 +848,14 @@ mod tests {
 
         let matter = BaseMatter::new(None, code, soft).unwrap();
         assert_eq!(matter.code(), code);
-        assert_eq!(matter.soft(), soft);
+        assert_eq!(matter.soft, soft);
         assert_eq!(matter.raw(), raw);
         assert_eq!(matter.qb64(), qb64);
         assert!(matter.special());
 
         let matter2 = BaseMatter::from_qb64(qb64).unwrap();
         assert_eq!(matter2.code(), code);
-        assert_eq!(matter2.soft(), soft);
+        assert_eq!(matter2.soft, soft);
         assert_eq!(matter2.raw(), raw);
 
         // Test TBD0S code with special soft value and non-empty raw
@@ -866,14 +866,14 @@ mod tests {
 
         let matter = BaseMatter::new(Some(raw.to_vec()), code, soft).unwrap();
         assert_eq!(matter.code(), code);
-        assert_eq!(matter.soft(), soft);
+        assert_eq!(matter.soft, soft);
         assert_eq!(matter.raw(), raw);
         assert_eq!(matter.qb64(), qb64);
         assert!(matter.special());
 
         let matter2 = BaseMatter::from_qb64(qb64).unwrap();
         assert_eq!(matter2.code(), code);
-        assert_eq!(matter2.soft(), soft);
+        assert_eq!(matter2.soft, soft);
         assert_eq!(matter2.raw(), raw);
     }
 
