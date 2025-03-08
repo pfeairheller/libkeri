@@ -29,6 +29,9 @@ pub enum Error {
     #[error("soft material error: {0}")]
     SoftMaterial(String),
     
+    #[error("conversion error: {0}")]
+    Conversion(String),
+    
     #[error("general error: {0}")]
     Other(String),
 }

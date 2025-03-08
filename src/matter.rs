@@ -225,32 +225,60 @@ impl BaseMatter {
     }
     
     fn exfil(&mut self, qb64b: &[u8]) -> Result<()> {
-        // Implementation details for extracting code and raw from qb64b
-        // This is a placeholder - actual implementation would be more complex
+        // Implementation matching Python _exfil logic
         if qb64b.is_empty() {
             return Err(Error::EmptyMaterial);
         }
         
         // Extract first character to determine code length
         let first = qb64b[0] as char;
+        
+        // Check if first character is valid
+        if !is_valid_hard_char(first) {
+            if first == '-' {
+                return Err(Error::Parsing("Unexpected count code start while extracting Matter".to_string()));
+            } else if first == '_' {
+                return Err(Error::Parsing("Unexpected op code start while extracting Matter".to_string()));
+            } else {
+                return Err(Error::InvalidCode(format!("Unsupported code start char={}", first)));
+            }
+        }
+        
         let hs = get_hard_size(first)?;
         
         if qb64b.len() < hs {
             return Err(Error::Parsing(format!("Need {} more characters", hs - qb64b.len())));
         }
         
-        // Extract code
-        self.code = std::str::from_utf8(&qb64b[..hs])?.to_string();
+        // Extract hard code
+        let hard = std::str::from_utf8(&qb64b[..hs])?;
         
-        // Get size information
-        let sizes = get_sizes(&self.code)?;
+        // Validate hard code
+        let sizes = get_sizes(hard)?;
         
-        // Extract soft part if any
-        if sizes.ss > 0 {
-            if qb64b.len() < hs + sizes.ss {
-                return Err(Error::Parsing(format!("Need {} more characters", hs + sizes.ss - qb64b.len())));
-            }
-            self.soft = std::str::from_utf8(&qb64b[hs..hs+sizes.ss])?.to_string();
+        let ss = sizes.ss;
+        let xs = sizes.xs;
+        let ls = sizes.ls;
+        let cs = hs + ss; // Combined hard and soft size
+        
+        // Extract soft part including extra padding if any
+        if qb64b.len() < cs {
+            return Err(Error::Parsing(format!("Need {} more characters", cs - qb64b.len())));
+        }
+        
+        let soft_with_xtra = if ss > 0 {
+            std::str::from_utf8(&qb64b[hs..hs+ss])?
+        } else {
+            ""
+        };
+        
+        // Extract extra padding from soft part
+        let xtra = &soft_with_xtra[..xs.min(soft_with_xtra.len())];
+        let soft = &soft_with_xtra[xs.min(soft_with_xtra.len())..];
+        
+        // Validate extra padding
+        if xtra != "A".repeat(xs) {
+            return Err(Error::InvalidCode(format!("Invalid prepad xtra={}", xtra)));
         }
         
         // Calculate full size
@@ -258,8 +286,13 @@ impl BaseMatter {
             Some(fs) => fs,
             None => {
                 // Variable sized - calculate from soft part
-                // This is a placeholder - actual implementation would be more complex
-                hs + sizes.ss + 4 // Simplified calculation
+                if soft.is_empty() {
+                    return Err(Error::Parsing("Empty soft part for variable sized code".to_string()));
+                }
+                
+                // Convert base64 to integer and calculate full size
+                let size_int = b64_to_int(soft)?;
+                (size_int * 4) + cs
             }
         };
         
@@ -267,13 +300,45 @@ impl BaseMatter {
             return Err(Error::Parsing(format!("Need {} more characters", fs - qb64b.len())));
         }
         
-        // Extract raw
-        let raw_start = hs + sizes.ss;
-        let raw_end = fs;
-        let raw_b64 = &qb64b[raw_start..raw_end];
+        // Calculate padding bytes needed for 24-bit alignment
+        let ps = cs % 4; // Net prepad bytes
         
-        // Decode Base64 to get raw bytes
-        self.raw = URL_SAFE_NO_PAD.decode(raw_b64)?;
+        // Create base with padding 'A's + the base64 of (lead + raw)
+        let mut base = vec![b'A'; ps];
+        base.extend_from_slice(&qb64b[cs..fs]);
+        
+        // Decode base64 to get padded raw bytes
+        let paw = URL_SAFE_NO_PAD.decode(&base)?;
+        
+        // Check for non-zero padding bytes
+        if ps + ls > 0 {
+            let mut pad_bytes = vec![0u8; ps + ls];
+            if paw.len() >= ps + ls {
+                pad_bytes.copy_from_slice(&paw[..ps + ls]);
+                let pi = bytes_to_int(&pad_bytes);
+                if pi != 0 {
+                    return Err(Error::Conversion(format!("Nonzero midpad bytes=0x{:0width$x}", pi, width=(ps + ls) * 2)));
+                }
+            }
+        }
+        
+        // Extract raw bytes after padding
+        let raw = if ps + ls < paw.len() {
+            paw[ps + ls..].to_vec()
+        } else {
+            vec![]
+        };
+        
+        // Verify raw length
+        let expected_raw_len = ((fs - cs) * 3) / 4 - ls;
+        if raw.len() != expected_raw_len {
+            return Err(Error::Conversion(format!("Improperly qualified material")));
+        }
+        
+        // Set the extracted values
+        self.code = hard.to_string();
+        self.soft = soft.to_string();
+        self.raw = raw;
         
         Ok(())
     }
@@ -514,6 +579,11 @@ impl DigestVerifiable for Diger {
 
 // Helper functions
 
+/// Check if a character is a valid hard character
+fn is_valid_hard_char(first: char) -> bool {
+    matches!(first, 'A'..='Z' | 'a'..='z' | '0'..='9')
+}
+
 /// Get the hard size for a derivation code first character
 fn get_hard_size(first: char) -> Result<usize> {
     match first {
@@ -521,6 +591,37 @@ fn get_hard_size(first: char) -> Result<usize> {
         '0'..='9' => Ok(2),
         _ => Err(Error::InvalidCode(format!("Invalid first character: {}", first))),
     }
+}
+
+/// Convert base64 string to integer
+fn b64_to_int(b64: &str) -> Result<usize> {
+    if b64.is_empty() {
+        return Ok(0);
+    }
+    
+    let mut result: usize = 0;
+    for c in b64.chars() {
+        let val = match c {
+            'A'..='Z' => (c as u8 - b'A') as usize,
+            'a'..='z' => (c as u8 - b'a' + 26) as usize,
+            '0'..='9' => (c as u8 - b'0' + 52) as usize,
+            '-' => 62,
+            '_' => 63,
+            _ => return Err(Error::Parsing(format!("Invalid base64 character: {}", c))),
+        };
+        result = result * 64 + val;
+    }
+    
+    Ok(result)
+}
+
+/// Convert bytes to integer
+fn bytes_to_int(bytes: &[u8]) -> usize {
+    let mut result: usize = 0;
+    for &byte in bytes {
+        result = (result << 8) | byte as usize;
+    }
+    result
 }
 
 /// Get size information for a derivation code
