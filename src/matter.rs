@@ -5,6 +5,7 @@
 //! and verification.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use sodiumoxide::crypto::sign::ed25519;
 use std::collections::HashMap;
 use crate::{Error, Result};
 
@@ -377,9 +378,29 @@ impl Verifiable for Verfer {
 
 impl Verfer {
     fn verify_ed25519(&self, sig: &[u8], ser: &[u8]) -> bool {
-        // Implementation for Ed25519 verification
-        // This is a placeholder - actual implementation would use sodiumoxide
-        false
+        // Implementation for Ed25519 verification using sodiumoxide
+        if sig.len() != ed25519::SIGNATUREBYTES {
+            return false;
+        }
+        
+        if self.raw().len() != ed25519::PUBLICKEYBYTES {
+            return false;
+        }
+        
+        // Convert raw bytes to sodiumoxide public key
+        let pk = match ed25519::PublicKey::from_slice(self.raw()) {
+            Some(pk) => pk,
+            None => return false,
+        };
+        
+        // Convert signature bytes to sodiumoxide signature
+        let signature = match ed25519::Signature::from_slice(sig) {
+            Some(sig) => sig,
+            None => return false,
+        };
+        
+        // Verify the signature
+        ed25519::verify_detached(&signature, ser, &pk)
     }
 }
 
@@ -858,9 +879,13 @@ mod tests {
 
     #[test]
     fn test_verfer() {
+        // Initialize sodiumoxide
+        sodiumoxide::init().expect("Sodium initialization failed");
+        
         // Generate a test key pair
-        let seed = [0u8; 32]; // Use a fixed seed for deterministic testing
-        let (verkey, _) = pysodium::crypto_sign_seed_keypair(&seed);
+        let seed = ed25519::Seed::from_slice(&[0u8; 32]).unwrap(); // Use a fixed seed for deterministic testing
+        let (pk, sk) = ed25519::keypair_from_seed(&seed);
+        let verkey = pk.as_ref();
 
         // Create a Verfer with non-transferable code
         let verfer = Verfer::new(Some(verkey.to_vec()), mtr_dex::ED25519N).unwrap();
@@ -870,13 +895,13 @@ mod tests {
 
         // Create a signature to verify
         let ser = b"abcdefghijklmnopqrstuvwxyz0123456789";
-        let sig = pysodium::crypto_sign_detached(ser, &seed);
-
+        let sig = ed25519::sign_detached(ser, &sk);
+        
         // Verify the signature
-        assert!(verfer.verify(&sig, ser));
+        assert!(verfer.verify(sig.as_ref(), ser));
 
         // Modify the signature and verify it fails
-        let mut bad_sig = sig.clone();
+        let mut bad_sig = sig.as_ref().to_vec();
         bad_sig[0] = bad_sig[0].wrapping_add(1);
         assert!(!verfer.verify(&bad_sig, ser));
 
@@ -887,7 +912,7 @@ mod tests {
         assert!(verfer.is_transferable());
 
         // Verify the signature with transferable code
-        assert!(verfer.verify(&sig, ser));
+        assert!(verfer.verify(sig.as_ref(), ser));
     }
 
     #[test]
@@ -929,28 +954,34 @@ mod tests {
 
     #[test]
     fn test_cigar() {
+        // Initialize sodiumoxide
+        sodiumoxide::init().expect("Sodium initialization failed");
+        
         // Generate a test key pair
-        let seed = [0u8; 32]; // Use a fixed seed for deterministic testing
-        let (verkey, _) = pysodium::crypto_sign_seed_keypair(&seed);
+        let seed = ed25519::Seed::from_slice(&[0u8; 32]).unwrap(); // Use a fixed seed for deterministic testing
+        let (pk, sk) = ed25519::keypair_from_seed(&seed);
+        let verkey = pk.as_ref().to_vec();
 
         // Create a signature
         let ser = b"abcdefghijklmnopqrstuvwxyz0123456789";
-        let sig = pysodium::crypto_sign_detached(ser, &seed);
+        let sig = ed25519::sign_detached(ser, &sk);
+        let sig_bytes = sig.as_ref().to_vec();
 
         // Create a Verfer
-        let verfer = Verfer::new(Some(verkey.to_vec()), mtr_dex::ED25519).unwrap();
+        let verfer = Verfer::new(Some(verkey), mtr_dex::ED25519).unwrap();
 
         // Create a Cigar with the signature
-        let cigar = Cigar::new(Some(sig.clone()), mtr_dex::ED25519_SIG, Some(verfer.clone())).unwrap();
+        let cigar = Cigar::new(Some(sig_bytes.clone()), mtr_dex::ED25519_SIG, Some(verfer.clone())).unwrap();
         assert_eq!(cigar.code(), mtr_dex::ED25519_SIG);
-        assert_eq!(cigar.raw(), sig);
+        assert_eq!(cigar.raw(), sig_bytes);
 
         // Verify the signature using the verfer in the cigar
         assert!(cigar.verfer.unwrap().verify(&cigar.raw(), ser));
+        
         // Create a Cigar without a verfer
-        let cigar = Cigar::new(Some(sig.clone()), mtr_dex::ED25519_SIG, None).unwrap();
+        let cigar = Cigar::new(Some(sig_bytes.clone()), mtr_dex::ED25519_SIG, None).unwrap();
         assert_eq!(cigar.code(), mtr_dex::ED25519_SIG);
-        assert_eq!(cigar.raw(), sig);
+        assert_eq!(cigar.raw(), sig_bytes);
         assert!(cigar.verfer.is_none());
 
         // Set the verfer after creation
