@@ -6,15 +6,15 @@ Below is a checklist to track progress against the **multi-iteration** plan. Che
 
 ## **Phase 1: CESR Primitives**
 
-- [ ] **1.1**: Initialize a new Cargo project (`cargo new keri_rust`)
-    - [ ] Add dependencies in `Cargo.toml`:
+- [x] **1.1**: Initialize a new Cargo project (`cargo new keri_rust`)
+    - [x] Add dependencies in `Cargo.toml`:
         - `tokio`
         - `tracing`
         - `thiserror`
         - `serde`, `serde_json`
         - `sodiumoxide`
-    - [ ] Create a basic `main.rs` that prints "Hello KERI!"
-    - [ ] Confirm project compiles and runs.
+    - [x] Create a basic `main.rs` that prints "Hello KERI!"
+    - [x] Confirm project compiles and runs.
 
 - [ ] **1.2**: Add basic project structure
     - [ ] Create `lib.rs` with `mod errors;`, `mod cesr;`, etc.

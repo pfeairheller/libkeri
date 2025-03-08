@@ -156,10 +156,27 @@ Now that we have a basic project structure, please add:
 Ensure each variant has an appropriate error message. Also re-export `Error` from `lib.rs`.
 ```
 
-### Prompt #3: Implement Basic CESR Data Structures
+### Architect Prompt for Matter
+```text
+Can you analyze the Python class structure from coring.py, starting with the class Matter and recommend a design for Rust equivilent of Matter and all its subclasses, using Rust structs and traits.
 ```
+
+### Architect Prompt for Matter tests
+```text
+Can you analyze the tests in test_coring.py, specifically test_matter_class and test_matter and create equivalent Rust tests for the structs and traits just created in matter.rs.  Please use Rust testing best practices but keep the tests functional equivalent to the Python versions.  Pay particular attention to ensuring compatibility.
+```
+
+```test
+In src/matter.rs there are incorrect uses of pysodium which is not a library that exists.  Can you replace those calls with the appropriate sodiumoxide calls?
+```
+
+```test
+```
+
+### Prompt #3: Implement Basic CESR Data Structures
+```text
 In the `lib.rs` file, create a `mod cesr;` and a `cesr.rs` file with:
-- Basic structs: `Prefix`, `Signature`, `KeyPair` (as placeholders).
+- Basic structs: `Matter`, `Signature`, `KeyPair` (as placeholders).
 - Implement any relevant fields with placeholders (e.g., `pub struct Prefix { pub value: String }`, etc.).
 - Derive Debug, Clone, PartialEq for each.
 - Add minimal doc comments explaining the purpose of each.
