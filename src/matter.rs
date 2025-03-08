@@ -131,6 +131,7 @@ pub trait DigestVerifiable {
 }
 
 /// Base struct for all cryptographic material
+#[derive(Clone)]
 pub struct BaseMatter {
     code: String,
     raw: Vec<u8>,
@@ -138,6 +139,17 @@ pub struct BaseMatter {
 }
 
 impl BaseMatter {
+    /// Check if this is a special code
+    pub fn special(&self) -> bool {
+        // Special codes include Tag3 and TBD0S
+        self.code() == mtr_dex::TAG3 || self.code() == mtr_dex::TBD0S
+    }
+    
+    /// Get the soft part
+    pub fn soft(&self) -> &str {
+        &self.soft
+    }
+    
     /// Create a new BaseMatter from raw bytes and code
     pub fn new(raw: Option<Vec<u8>>, code: &str, soft: &str) -> Result<Self> {
         // Get size information for the code
@@ -316,6 +328,7 @@ impl Matter for BaseMatter {
 }
 
 /// Verification key implementation
+#[derive(Clone)]
 pub struct Verfer {
     matter: BaseMatter,
 }
@@ -394,9 +407,9 @@ impl Verfer {
         };
         
         // Convert signature bytes to sodiumoxide signature
-        let signature = match ed25519::Signature::from_slice(sig) {
-            Some(sig) => sig,
-            None => return false,
+        let signature = match ed25519::Signature::from_bytes(sig) {
+            Ok(sig) => sig,
+            Err(_) => return false,
         };
         
         // Verify the signature
@@ -405,6 +418,7 @@ impl Verfer {
 }
 
 /// Signature with verification capability
+#[derive(Clone)]
 pub struct Cigar {
     matter: BaseMatter,
     verfer: Option<Verfer>,
@@ -430,11 +444,17 @@ impl Matter for Cigar {
 }
 
 /// Digest implementation
+#[derive(Clone)]
 pub struct Diger {
     matter: BaseMatter,
 }
 
 impl Diger {
+    /// Create a new Diger with serialized data
+    pub fn new_with_ser(ser: &[u8], code: &str) -> Result<Self> {
+        Self::new(None, Some(ser), code)
+    }
+    
     pub fn new(raw: Option<Vec<u8>>, ser: Option<&[u8]>, code: &str) -> Result<Self> {
         let raw = match (raw, ser) {
             (Some(r), _) => Some(r),
@@ -921,7 +941,7 @@ mod tests {
         let ser = b"abcdefghijklmnopqrstuvwxyz0123456789";
         let dig = blake3::hash(ser).as_bytes().to_vec();
 
-        let diger = Diger::new(Some(dig.clone()), mtr_dex::BLAKE3_256).unwrap();
+        let diger = Diger::new(Some(dig.clone()), None, mtr_dex::BLAKE3_256).unwrap();
         assert_eq!(diger.code(), mtr_dex::BLAKE3_256);
         assert_eq!(diger.raw(), dig);
         assert!(diger.is_digestive());
