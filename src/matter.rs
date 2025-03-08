@@ -6,7 +6,6 @@
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sodiumoxide::crypto::sign::ed25519;
-use std::collections::HashMap;
 use crate::{Error, Result};
 
 /// Derivation codes for Matter
@@ -158,7 +157,7 @@ impl BaseMatter {
         // Validate raw size
         let raw = match raw {
             Some(r) => {
-                if let Some(fs) = sizes.fs {
+                if let Some(_fs) = sizes.fs {
                     if r.len() != raw_size(code)? {
                         return Err(Error::RawMaterial(format!(
                             "Invalid raw size for code {}: expected {}, got {}",
@@ -596,8 +595,6 @@ impl From<base64::DecodeError> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    use std::str::FromStr;
 
     #[test]
     fn test_matter_codex() {
@@ -996,7 +993,7 @@ mod tests {
         assert_eq!(cigar.raw(), sig_bytes);
 
         // Verify the signature using the verfer in the cigar
-        assert!(cigar.verfer.unwrap().verify(&cigar.raw(), ser));
+        assert!(cigar.verfer.clone().unwrap().verify(&cigar.raw(), ser));
         
         // Create a Cigar without a verfer
         let cigar = Cigar::new(Some(sig_bytes.clone()), mtr_dex::ED25519_SIG, None).unwrap();
@@ -1008,6 +1005,6 @@ mod tests {
         let mut cigar = cigar;
         cigar.verfer = Some(verfer.clone());
         assert!(cigar.verfer.is_some());
-        assert!(cigar.verfer.unwrap().verify(&cigar.raw(), ser));
+        assert!(cigar.verfer.clone().unwrap().verify(&cigar.raw(), ser));
     }
 }

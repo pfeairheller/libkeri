@@ -1,7 +1,5 @@
 //! KERI (Key Event Receipt Infrastructure) library implementation in Rust.
 
-use serde::{Serialize, Deserialize};
-
 // Error handling module
 mod errors;
 // Core cryptographic material module
