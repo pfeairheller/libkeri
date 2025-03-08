@@ -1,8 +1,3 @@
-fn main() {
-    println!("Hello, world!");
-}
-//! Simple executable to demonstrate the KERI library.
-
 use libkeri;
 
 #[tokio::main]

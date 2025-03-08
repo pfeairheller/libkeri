@@ -22,8 +22,8 @@ pub type Result<T> = std::result::Result<T, KeriError>;
 /// Initialize the KERI library
 pub fn init() -> Result<()> {
     // Initialize sodiumoxide
-    if !sodiumoxide::init() {
-        return Err(KeriError::Crypto("Failed to initialize sodiumoxide".into()));
+    if let Err(_) = sodiumoxide::init() {
+        return Err(KeriError::Crypto("Failed to initialize sodiumoxide}".into()));
     }
     
     Ok(())
