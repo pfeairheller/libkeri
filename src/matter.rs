@@ -27,6 +27,18 @@ pub mod mtr_dex {
     pub const X25519_PRIVATE: &str = "O";
     pub const X25519_CIPHER_SEED: &str = "P";
     pub const ECDSA_256R1_SEED: &str = "Q";
+    pub const ECDSA_256K1R1_SEED: &str = "R";
+    pub const TBD0S: &str = "1__-";
+    pub const TBD0: &str = "1___";
+    pub const TBD1: &str = "2___";
+    pub const TBD2: &str = "3___";
+    pub const TBD3: &str = "4___";
+    pub const BYTES_L0: &str = "4B";
+    pub const BYTES_L1: &str = "5B";
+    pub const BYTES_L2: &str = "6B";
+    pub const ED25519_SIG: &str = "0B";
+    pub const TAG3: &str = "X";
+
     // ... other codes can be added as needed
 }
 
@@ -85,7 +97,7 @@ pub trait Matter {
     
     /// Get the fully qualified Base64 representation
     fn qb64(&self) -> String;
-    
+
     /// Get the fully qualified Base64 representation as bytes
     fn qb64b(&self) -> Vec<u8>;
     
@@ -113,8 +125,8 @@ pub trait DigestVerifiable {
     /// Verify a digest against serialized data
     fn verify(&self, ser: &[u8]) -> bool;
     
-    /// Compare with another digest
-    fn compare(&self, ser: &[u8], dig: Option<&[u8]>, diger: Option<&dyn DigestVerifiable>) -> bool;
+    // Compare with another digest
+    // fn compare(&self, ser: &[u8], dig: Option<&[u8]>, diger: Option<&dyn Matter>) -> bool;
 }
 
 /// Base struct for all cryptographic material
@@ -441,23 +453,23 @@ impl DigestVerifiable for Diger {
         computed == self.raw()
     }
     
-    fn compare(&self, ser: &[u8], dig: Option<&[u8]>, diger: Option<&dyn DigestVerifiable>) -> bool {
-        if let Some(d) = dig {
-            return d == self.qb64b().as_slice();
-        }
-        
-        if let Some(d) = diger {
-            if d.qb64() == self.qb64() {
-                return true;
-            }
-            
-            if d.verify(ser) && self.verify(ser) {
-                return true;
-            }
-        }
-        
-        false
-    }
+    // fn compare(&self, ser: &[u8], dig: Option<&[u8]>, diger: Option<&dyn Matter>) -> bool {
+    //     if let Some(d) = dig {
+    //         return d == self.qb64b().as_slice();
+    //     }
+    //
+    //     if let Some(d) = diger {
+    //         if d.qb64() == self.qb64() {
+    //             return true;
+    //         }
+    //
+    //         if d.verify(ser) && self.verify(ser) {
+    //             return true;
+    //         }
+    //     }
+    //
+    //     false
+    // }
 }
 
 // Helper functions
@@ -537,5 +549,414 @@ impl From<std::str::Utf8Error> for Error {
 impl From<base64::DecodeError> for Error {
     fn from(err: base64::DecodeError) -> Self {
         Error::Parsing(format!("Base64 decode error: {}", err))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_matter_codex() {
+        // Test that MtrDex constants are defined correctly
+        assert_eq!(mtr_dex::ED25519_SEED, "A");
+        assert_eq!(mtr_dex::ED25519N, "B");
+        assert_eq!(mtr_dex::X25519, "C");
+        assert_eq!(mtr_dex::ED25519, "D");
+        assert_eq!(mtr_dex::BLAKE3_256, "E");
+        assert_eq!(mtr_dex::BLAKE2B_256, "F");
+        assert_eq!(mtr_dex::BLAKE2S_256, "G");
+        assert_eq!(mtr_dex::SHA3_256, "H");
+        assert_eq!(mtr_dex::SHA2_256, "I");
+
+        // Test that Sizage values are correct for some codes
+        let sizes = get_sizes(mtr_dex::ED25519_SEED).unwrap();
+        assert_eq!(sizes.hs, 1);
+        assert_eq!(sizes.ss, 0);
+        assert_eq!(sizes.xs, 0);
+        assert_eq!(sizes.fs, Some(44));
+        assert_eq!(sizes.ls, 0);
+
+        let sizes = get_sizes(mtr_dex::ED25519N).unwrap();
+        assert_eq!(sizes.hs, 1);
+        assert_eq!(sizes.ss, 0);
+        assert_eq!(sizes.xs, 0);
+        assert_eq!(sizes.fs, Some(44));
+        assert_eq!(sizes.ls, 0);
+
+        let sizes = get_sizes(mtr_dex::BLAKE3_256).unwrap();
+        assert_eq!(sizes.hs, 1);
+        assert_eq!(sizes.ss, 0);
+        assert_eq!(sizes.xs, 0);
+        assert_eq!(sizes.fs, Some(44));
+        assert_eq!(sizes.ls, 0);
+
+        // Test raw_size function
+        assert_eq!(raw_size(mtr_dex::ED25519).unwrap(), 32);
+        assert_eq!(raw_size(mtr_dex::ED25519N).unwrap(), 32);
+        assert_eq!(raw_size(mtr_dex::BLAKE3_256).unwrap(), 32);
+    }
+
+    #[test]
+    fn test_matter_basic() {
+        // Test with empty material
+        let result = BaseMatter::new(None, "", "");
+        assert!(result.is_err());
+
+        // Test with raw bytes but no code
+        let verkey = b"iN\x89Gi\xe6\xc3&~\x8bG|%\x90(L\xd6G\xddB\xef`\x07\xd2T\xfc\xe1\xcd.\x9b\xe4#";
+        let result = BaseMatter::new(Some(verkey.to_vec()), "", "");
+        assert!(result.is_err());
+
+        // Test with valid raw and code
+        let result = BaseMatter::new(Some(verkey.to_vec()), mtr_dex::ED25519N, "");
+        assert!(result.is_ok());
+        let matter = result.unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.raw(), verkey);
+
+        // Test qb64 generation
+        let qb64 = matter.qb64();
+        assert_eq!(qb64, "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj");
+
+        // Test from qb64
+        let matter2 = BaseMatter::from_qb64(&qb64).unwrap();
+        assert_eq!(matter2.code(), mtr_dex::ED25519N);
+        assert_eq!(matter2.raw(), verkey);
+        assert_eq!(matter2.qb64(), qb64);
+
+        // Test qb2 generation and conversion
+        let qb2 = matter.qb2();
+        let matter3 = BaseMatter::try_from(qb2.as_slice()).unwrap();
+        assert_eq!(matter3.code(), mtr_dex::ED25519N);
+        assert_eq!(matter3.raw(), verkey);
+        assert_eq!(matter3.qb64(), qb64);
+
+        // Test transferable property
+        assert!(!matter.is_transferable());
+
+        // Test with transferable code
+        let result = BaseMatter::new(Some(verkey.to_vec()), mtr_dex::ED25519, "");
+        assert!(result.is_ok());
+        let matter = result.unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519);
+        assert!(matter.is_transferable());
+
+        // Test digestive property
+        assert!(!matter.is_digestive());
+
+        // Test with digest code
+        let digest = [0u8; 32];
+        let result = BaseMatter::new(Some(digest.to_vec()), mtr_dex::BLAKE3_256, "");
+        assert!(result.is_ok());
+        let matter = result.unwrap();
+        assert_eq!(matter.code(), mtr_dex::BLAKE3_256);
+        assert!(matter.is_digestive());
+
+        // Test prefixive property
+        assert!(matter.is_prefixive());
+    }
+
+    #[test]
+    fn test_matter_from_qb64() {
+        let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
+        let matter = BaseMatter::from_qb64(prefix).unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.qb64(), prefix);
+
+        // Test with full identifier
+        let both = format!("{}:mystuff/mypath/toresource?query=what#fragment", prefix);
+        let matter = BaseMatter::from_qb64(&both).unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.qb64(), prefix);
+        assert!(!matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(matter.is_prefixive());
+    }
+
+    #[test]
+    fn test_matter_from_qb64b() {
+        let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
+        let prefixb = prefix.as_bytes();
+        let matter = BaseMatter::from_qb64b(prefixb).unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.qb64(), prefix);
+
+        // Test with full identifier
+        let both = format!("{}:mystuff/mypath/toresource?query=what#fragment", prefix);
+        let bothb = both.as_bytes();
+        let matter = BaseMatter::from_qb64b(bothb).unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.qb64(), prefix);
+        assert!(!matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(matter.is_prefixive());
+    }
+
+    #[test]
+    fn test_matter_from_qb2() {
+        let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
+        let matter = BaseMatter::from_qb64(prefix).unwrap();
+        let qb2 = matter.qb2();
+
+        let matter2 = BaseMatter::from_qb2(&qb2).unwrap();
+        assert_eq!(matter2.code(), mtr_dex::ED25519N);
+        assert_eq!(matter2.qb64(), prefix);
+        assert!(!matter2.is_transferable());
+        assert!(!matter2.is_digestive());
+        assert!(matter2.is_prefixive());
+    }
+
+    #[test]
+    fn test_matter_with_fixed_sizes() {
+        // Test TBD0 code with fixed size and lead size 0
+        let code = mtr_dex::TBD0;
+        let raw = b"abc";
+        let qb64 = "1___YWJj";
+
+        let matter = BaseMatter::new(Some(raw.to_vec()), code, "").unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test TBD1 code with fixed size and lead size 1
+        let code = mtr_dex::TBD1;
+        let raw = b"ab";
+        let qb64 = "2___AGFi";
+
+        let matter = BaseMatter::new(Some(raw.to_vec()), code, "").unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test TBD2 code with fixed size and lead size 2
+        let code = mtr_dex::TBD2;
+        let raw = b"z";
+        let qb64 = "3___AAB6";
+
+        let matter = BaseMatter::new(Some(raw.to_vec()), code, "").unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+    }
+
+    #[test]
+    fn test_matter_with_variable_sizes() {
+        // Test Bytes_L0 code with variable size and lead size 0
+        let code = mtr_dex::BYTES_L0;
+        let raw = b"abcdef";
+        let qb64 = "4BACYWJjZGVm";
+
+        let matter = BaseMatter::new(Some(raw.to_vec()), code, "").unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test Bytes_L1 code with variable size and lead size 1
+        let code = mtr_dex::BYTES_L1;
+        let raw = b"abcde";
+        let qb64 = "5BACAGFiY2Rl";
+
+        let matter = BaseMatter::new(Some(raw.to_vec()), code, "").unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test Bytes_L2 code with variable size and lead size 2
+        let code = mtr_dex::BYTES_L2;
+        let raw = b"abcd";
+        let qb64 = "6BACAABhYmNk";
+
+        let matter = BaseMatter::new(Some(raw.to_vec()), code, "").unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+    }
+
+    #[test]
+    fn test_matter_with_special_codes() {
+        // Test Tag3 code with special soft value
+        let code = mtr_dex::TAG3;
+        let soft = "icp";
+        let qb64 = "Xicp";
+        let raw = b"";
+
+        let matter = BaseMatter::new(None, code, soft).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.soft(), soft);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.special());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.soft(), soft);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test TBD0S code with special soft value and non-empty raw
+        let code = mtr_dex::TBD0S;
+        let soft = "TG";
+        let raw = b"uvwx";
+        let qb64 = "1__-TGB1dnd4";
+
+        let matter = BaseMatter::new(Some(raw.to_vec()), code, soft).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.soft(), soft);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.special());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.soft(), soft);
+        assert_eq!(matter2.raw(), raw);
+    }
+
+    #[test]
+    fn test_verfer() {
+        // Generate a test key pair
+        let seed = [0u8; 32]; // Use a fixed seed for deterministic testing
+        let (verkey, _) = pysodium::crypto_sign_seed_keypair(&seed);
+
+        // Create a Verfer with non-transferable code
+        let verfer = Verfer::new(Some(verkey.to_vec()), mtr_dex::ED25519N).unwrap();
+        assert_eq!(verfer.code(), mtr_dex::ED25519N);
+        assert_eq!(verfer.raw(), verkey);
+        assert!(!verfer.is_transferable());
+
+        // Create a signature to verify
+        let ser = b"abcdefghijklmnopqrstuvwxyz0123456789";
+        let sig = pysodium::crypto_sign_detached(ser, &seed);
+
+        // Verify the signature
+        assert!(verfer.verify(&sig, ser));
+
+        // Modify the signature and verify it fails
+        let mut bad_sig = sig.clone();
+        bad_sig[0] = bad_sig[0].wrapping_add(1);
+        assert!(!verfer.verify(&bad_sig, ser));
+
+        // Create a Verfer with transferable code
+        let verfer = Verfer::new(Some(verkey.to_vec()), mtr_dex::ED25519).unwrap();
+        assert_eq!(verfer.code(), mtr_dex::ED25519);
+        assert_eq!(verfer.raw(), verkey);
+        assert!(verfer.is_transferable());
+
+        // Verify the signature with transferable code
+        assert!(verfer.verify(&sig, ser));
+    }
+
+    #[test]
+    fn test_diger() {
+        // Test creating a Diger with raw digest
+        let ser = b"abcdefghijklmnopqrstuvwxyz0123456789";
+        let dig = blake3::hash(ser).as_bytes().to_vec();
+
+        let diger = Diger::new(Some(dig.clone()), mtr_dex::BLAKE3_256).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE3_256);
+        assert_eq!(diger.raw(), dig);
+        assert!(diger.is_digestive());
+
+        // Test creating a Diger from serialization
+        let diger = Diger::new_with_ser(ser, mtr_dex::BLAKE3_256).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE3_256);
+        assert!(diger.verify(ser));
+
+        // Test verification with correct serialization
+        assert!(diger.verify(ser));
+
+        // Test verification with incorrect serialization
+        let bad_ser = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEF";
+        assert!(!diger.verify(bad_ser));
+        // Test compare method with matching digests
+        // let diger2 = Diger::new_with_ser(ser, mtr_dex::BLAKE3_256).unwrap();
+        // assert!(diger.compare(ser, Some(diger2.qb64().as_bytes()), None));
+        // assert!(diger.compare(ser, None, Some(&diger2)));
+        //
+        // // Test compare method with non-matching digests
+        // let diger3 = Diger::new_with_ser(bad_ser, mtr_dex::BLAKE3_256).unwrap();
+        // assert!(!diger.compare(ser, Some(diger3.qb64().as_bytes()), None));
+        // assert!(!diger.compare(ser, None, Some(&diger3)));
+        //
+        // // Test with different digest algorithms
+        // let diger4 = Diger::new_with_ser(ser, mtr_dex::SHA3_256).unwrap();
+        // assert!(diger.compare(ser, None, Some(&diger4)));
+    }
+
+    #[test]
+    fn test_cigar() {
+        // Generate a test key pair
+        let seed = [0u8; 32]; // Use a fixed seed for deterministic testing
+        let (verkey, _) = pysodium::crypto_sign_seed_keypair(&seed);
+
+        // Create a signature
+        let ser = b"abcdefghijklmnopqrstuvwxyz0123456789";
+        let sig = pysodium::crypto_sign_detached(ser, &seed);
+
+        // Create a Verfer
+        let verfer = Verfer::new(Some(verkey.to_vec()), mtr_dex::ED25519).unwrap();
+
+        // Create a Cigar with the signature
+        let cigar = Cigar::new(Some(sig.clone()), mtr_dex::ED25519_SIG, Some(verfer.clone())).unwrap();
+        assert_eq!(cigar.code(), mtr_dex::ED25519_SIG);
+        assert_eq!(cigar.raw(), sig);
+
+        // Verify the signature using the verfer in the cigar
+        assert!(cigar.verfer.unwrap().verify(&cigar.raw(), ser));
+        // Create a Cigar without a verfer
+        let cigar = Cigar::new(Some(sig.clone()), mtr_dex::ED25519_SIG, None).unwrap();
+        assert_eq!(cigar.code(), mtr_dex::ED25519_SIG);
+        assert_eq!(cigar.raw(), sig);
+        assert!(cigar.verfer.is_none());
+
+        // Set the verfer after creation
+        let mut cigar = cigar;
+        cigar.verfer = Some(verfer.clone());
+        assert!(cigar.verfer.is_some());
+        assert!(cigar.verfer.unwrap().verify(&cigar.raw(), ser));
     }
 }
