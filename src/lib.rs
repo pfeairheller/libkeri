@@ -1,29 +1,19 @@
 //! KERI (Key Event Receipt Infrastructure) library implementation in Rust.
 
-use thiserror::Error;
 use serde::{Serialize, Deserialize};
 
-/// Error types for the KERI library
-#[derive(Error, Debug)]
-pub enum KeriError {
-    #[error("general error: {0}")]
-    General(String),
-    
-    #[error("crypto error: {0}")]
-    Crypto(String),
-    
-    #[error("serialization error: {0}")]
-    Serialization(String),
-}
+// Error handling module
+mod errors;
 
-/// Result type for KERI operations
-pub type Result<T> = std::result::Result<T, KeriError>;
+// Re-export Error type
+pub use errors::Error;
+pub use errors::Result;
 
 /// Initialize the KERI library
 pub fn init() -> Result<()> {
     // Initialize sodiumoxide
     if let Err(_) = sodiumoxide::init() {
-        return Err(KeriError::Crypto("Failed to initialize sodiumoxide}".into()));
+        return Err(Error::Crypto("Failed to initialize sodiumoxide".into()));
     }
     
     Ok(())
