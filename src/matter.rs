@@ -221,7 +221,7 @@ impl BaseMatter {
         
         let hs = sizes.hs;
         let ss = sizes.ss;
-        let xs = sizes.xs;
+        let _xs = sizes.xs;
         let fs = sizes.fs;
         let ls = sizes.ls;
         let cs = hs + ss;
