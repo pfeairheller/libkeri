@@ -281,17 +281,68 @@ impl BaseMatter {
     }
     
     fn binfil(&self) -> Vec<u8> {
-        // Implementation for creating qb2 from code and raw
-        let qb64b = self.infil();
-        if qb64b.is_empty() {
-            return Vec::new();
+        // Implementation matching Python _binfil logic
+        let code = &self.code;  // hard part of full code
+        let both = format!("{}{}", self.code, self.soft);  // code + soft, soft may be empty
+        let raw = &self.raw;  // raw bytes, may be empty
+        
+        // Get size information for the code
+        let sizes = match get_sizes(code) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),  // Return empty on error
+        };
+        
+        let hs = sizes.hs;
+        let ss = sizes.ss;
+        let fs = sizes.fs;
+        let ls = sizes.ls;
+        let cs = hs + ss;
+        
+        // Calculate number of binary bytes needed to hold base64 code
+        let n = (cs * 3 + 3) / 4;  // ceiling of cs * 3 / 4
+        
+        // Convert code to binary representation
+        // First convert to integer, then left shift by pad bits, then to bytes
+        let b64_int = match b64_to_int(&both) {
+            Ok(i) => i,
+            Err(_) => return Vec::new(),
+        };
+        
+        // Left shift by pad bits (2 bits per character of padding)
+        let shifted = b64_int << (2 * (cs % 4));
+        
+        // Convert to bytes with big-endian order
+        let mut bcode = Vec::new();
+        let mut temp = shifted;
+        for _ in 0..n {
+            bcode.insert(0, (temp & 0xFF) as u8);
+            temp >>= 8;
         }
         
-        // Convert base64 to binary
-        match URL_SAFE_NO_PAD.decode(&qb64b) {
-            Ok(bytes) => bytes,
-            Err(_) => Vec::new(),
+        // Ensure bcode is the right length (n bytes)
+        while bcode.len() < n {
+            bcode.insert(0, 0);
         }
+        
+        // Combine code bytes, lead bytes, and raw bytes
+        let mut full = bcode;
+        full.extend_from_slice(&vec![0; ls]);  // Add lead bytes
+        full.extend_from_slice(raw);  // Add raw bytes
+        
+        // Validate size
+        let bfs = full.len();
+        let computed_fs = if let Some(fs_val) = fs {
+            fs_val
+        } else {
+            // For variable size, compute fs
+            hs + ss + ((raw.len() + ls) * 4 + 2) / 3  // ceiling of (raw.len() + ls) * 4 / 3
+        };
+        
+        if bfs % 3 != 0 || (bfs * 4 + 2) / 3 != computed_fs {
+            return Vec::new();  // Invalid size
+        }
+        
+        full
     }
     
     fn exfil(&mut self, qb64b: &[u8]) -> Result<()> {
@@ -327,7 +378,7 @@ impl BaseMatter {
         let sizes = get_sizes(hard)?;
         
         let ss = sizes.ss;
-        let xs = sizes.xs;
+        let _xs = sizes.xs;  // Prefix with underscore to indicate intentionally unused
         let ls = sizes.ls;
         let cs = hs + ss; // Combined hard and soft size
         
@@ -414,14 +465,137 @@ impl BaseMatter {
     }
     
     fn bexfil(&mut self, qb2: &[u8]) -> Result<()> {
-        // Implementation details for extracting code and raw from qb2
-        // This is a placeholder - actual implementation would be more complex
+        // Implementation for extracting code and raw from binary qb2
         if qb2.is_empty() {
             return Err(Error::EmptyMaterial);
         }
         
-        // Extract code from binary
-        // Extract raw from binary
+        // First byte determines the code type
+        let first_byte = qb2[0];
+        
+        // Determine the hard size from the first byte
+        let first_char = match first_byte {
+            // ASCII range for letters and numbers
+            b'A'..=b'Z' | b'a'..=b'z' => (first_byte as char),
+            // For 2-byte codes, we need to convert the first two bytes to base64
+            _ => {
+                if qb2.len() < 2 {
+                    return Err(Error::Parsing("Need more bytes for code".to_string()));
+                }
+                
+                // Convert first two bytes to a base64 character
+                let val = ((first_byte as usize) << 8) | (qb2[1] as usize);
+                let idx = val >> 10;  // Get the 6 most significant bits
+                
+                match idx {
+                    0..=25 => (b'A' + idx as u8) as char,
+                    26..=51 => (b'a' + (idx - 26) as u8) as char,
+                    52..=61 => (b'0' + (idx - 52) as u8) as char,
+                    62 => '-',
+                    63 => '_',
+                    _ => return Err(Error::InvalidCode("Invalid binary code".to_string())),
+                }
+            }
+        };
+        
+        // Get hard size for the first character
+        let hs = get_hard_size(first_char)?;
+        
+        // Convert binary to base64 for the code part
+        let mut qb64b = Vec::new();
+        
+        // For single character codes
+        if hs == 1 {
+            qb64b.push(first_byte);
+        } else {
+            // For multi-character codes, convert binary to base64
+            let code_bytes = &qb2[0..ceil_div(hs * 6, 8)];
+            let code_b64 = URL_SAFE_NO_PAD.encode(code_bytes);
+            qb64b.extend_from_slice(code_b64.as_bytes());
+            
+            // Ensure we have the right number of characters
+            if qb64b.len() < hs {
+                return Err(Error::Parsing(format!("Invalid code bytes, expected {} chars", hs)));
+            }
+            
+            // Trim to the exact hard size
+            qb64b.truncate(hs);
+        }
+        
+        // Get the code as a string
+        let code = std::str::from_utf8(&qb64b[0..hs])?;
+        
+        // Get size information for the code
+        let sizes = get_sizes(code)?;
+        let ss = sizes.ss;
+        let ls = sizes.ls;
+        
+        // If there's a soft part, extract it
+        if ss > 0 {
+            // Calculate how many binary bytes we need for the soft part
+            let soft_bin_size = ceil_div(ss * 6, 8);
+            
+            // Ensure we have enough bytes
+            if qb2.len() < ceil_div((hs + ss) * 6, 8) {
+                return Err(Error::Parsing("Not enough bytes for soft part".to_string()));
+            }
+            
+            // Extract and convert the soft part
+            let soft_bytes = &qb2[ceil_div(hs * 6, 8)..ceil_div((hs + ss) * 6, 8)];
+            let soft_b64 = URL_SAFE_NO_PAD.encode(soft_bytes);
+            
+            // Ensure we have enough characters and trim to exact size
+            if soft_b64.len() < ss {
+                return Err(Error::Parsing(format!("Invalid soft bytes, expected {} chars", ss)));
+            }
+            
+            // Add soft part to qb64b
+            qb64b.extend_from_slice(soft_b64.as_bytes());
+            qb64b.truncate(hs + ss);
+        }
+        
+        // Now extract the raw bytes
+        let cs = hs + ss;
+        let cs_bin_size = ceil_div(cs * 6, 8);
+        
+        // Calculate full size
+        let fs = match sizes.fs {
+            Some(fs) => fs,
+            None => {
+                // For variable size, we need to extract from the soft part
+                if ss == 0 {
+                    return Err(Error::Parsing("Variable sized code with no soft part".to_string()));
+                }
+                
+                let soft = std::str::from_utf8(&qb64b[hs..hs+ss])?;
+                let size_int = b64_to_int(soft)?;
+                (size_int * 4) + cs
+            }
+        };
+        
+        // Calculate how many binary bytes we need for the full representation
+        let fs_bin_size = ceil_div(fs * 6, 8);
+        
+        // Ensure we have enough bytes
+        if qb2.len() < fs_bin_size {
+            return Err(Error::Parsing(format!("Need {} more bytes", fs_bin_size - qb2.len())));
+        }
+        
+        // Extract raw bytes (after code and lead bytes)
+        let raw = if cs_bin_size + ls < qb2.len() {
+            qb2[cs_bin_size + ls..fs_bin_size].to_vec()
+        } else {
+            Vec::new()
+        };
+        
+        // Set the extracted values
+        self.code = code.to_string();
+        self.soft = if ss > 0 {
+            std::str::from_utf8(&qb64b[hs..hs+ss])?.to_string()
+        } else {
+            String::new()
+        };
+        self.raw = raw;
         
         Ok(())
     }
@@ -692,6 +866,11 @@ fn bytes_to_int(bytes: &[u8]) -> usize {
         result = (result << 8) | byte as usize;
     }
     result
+}
+
+/// Calculate ceiling of a division
+fn ceil_div(a: usize, b: usize) -> usize {
+    (a + b - 1) / b
 }
 
 /// Get size information for a derivation code
