@@ -138,6 +138,42 @@ pub struct BaseMatter {
 }
 
 impl BaseMatter {
+    /// Map of first character of code to hard size
+    pub fn hards() -> std::collections::HashMap<char, usize> {
+        let mut hards = std::collections::HashMap::new();
+        // Single character codes
+        for c in 'A'..='Z' {
+            hards.insert(c, 1);
+        }
+        for c in 'a'..='z' {
+            hards.insert(c, 1);
+        }
+        // Two character codes
+        for c in '0'..='9' {
+            hards.insert(c, 2);
+        }
+        hards
+    }
+
+    /// Map of first character of code to code type
+    pub fn bards() -> std::collections::HashMap<char, &'static str> {
+        let mut bards = std::collections::HashMap::new();
+        // Basic codes
+        for c in 'A'..='Z' {
+            bards.insert(c, "basic");
+        }
+        for c in 'a'..='z' {
+            bards.insert(c, "basic");
+        }
+        // Indexed codes
+        for c in '0'..='9' {
+            bards.insert(c, "indexed");
+        }
+        bards
+    }
+}
+
+impl BaseMatter {
     /// Check if this is a special code
     pub fn special(&self) -> bool {
         // Special codes include Tag3 and TBD0S
@@ -354,8 +390,9 @@ impl BaseMatter {
         // Extract first character to determine code length
         let first = qb64b[0] as char;
         
-        // Check if first character is valid
-        if !is_valid_hard_char(first) {
+        // Check if first character is valid using Hards map
+        let hards = Self::hards();
+        if !hards.contains_key(&first) {
             if first == '-' {
                 return Err(Error::Parsing("Unexpected count code start while extracting Matter".to_string()));
             } else if first == '_' {
@@ -365,7 +402,7 @@ impl BaseMatter {
             }
         }
         
-        let hs = get_hard_size(first)?;
+        let hs = *hards.get(&first).unwrap();
         
         if qb64b.len() < hs {
             return Err(Error::Parsing(format!("Need {} more characters", hs - qb64b.len())));
@@ -523,17 +560,18 @@ impl BaseMatter {
         }
         
         // Get the code as a string
-        let code = std::str::from_utf8(&qb64b[0..hs])?;
+        let code_str = std::str::from_utf8(&qb64b[0..hs])?;
         
         // Get size information for the code
-        let sizes = get_sizes(code)?;
+        let sizes = get_sizes(code_str)?;
         let ss = sizes.ss;
         let ls = sizes.ls;
         
         // If there's a soft part, extract it
+        let mut soft = String::new();
         if ss > 0 {
             // Calculate how many binary bytes we need for the soft part
-            let soft_bin_size = ceil_div(ss * 6, 8);
+            let _soft_bin_size = ceil_div(ss * 6, 8);
             
             // Ensure we have enough bytes
             if qb2.len() < ceil_div((hs + ss) * 6, 8) {
@@ -549,9 +587,8 @@ impl BaseMatter {
                 return Err(Error::Parsing(format!("Invalid soft bytes, expected {} chars", ss)));
             }
             
-            // Add soft part to qb64b
-            qb64b.extend_from_slice(soft_b64.as_bytes());
-            qb64b.truncate(hs + ss);
+            // Store soft part
+            soft = soft_b64[..ss].to_string();
         }
         
         // Now extract the raw bytes
@@ -589,12 +626,8 @@ impl BaseMatter {
         };
         
         // Set the extracted values
-        self.code = code.to_string();
-        self.soft = if ss > 0 {
-            std::str::from_utf8(&qb64b[hs..hs+ss])?.to_string()
-        } else {
-            String::new()
-        };
+        self.code = code_str.to_string();
+        self.soft = soft;
         self.raw = raw;
         
         Ok(())
@@ -825,15 +858,14 @@ impl DigestVerifiable for Diger {
 
 /// Check if a character is a valid hard character
 fn is_valid_hard_char(first: char) -> bool {
-    matches!(first, 'A'..='Z' | 'a'..='z' | '0'..='9')
+    BaseMatter::hards().contains_key(&first)
 }
 
 /// Get the hard size for a derivation code first character
 fn get_hard_size(first: char) -> Result<usize> {
-    match first {
-        'A'..='Z' | 'a'..='z' => Ok(1),
-        '0'..='9' => Ok(2),
-        _ => Err(Error::InvalidCode(format!("Invalid first character: {}", first))),
+    match BaseMatter::hards().get(&first) {
+        Some(size) => Ok(*size),
+        None => Err(Error::InvalidCode(format!("Invalid first character: {}", first))),
     }
 }
 
