@@ -378,7 +378,7 @@ impl BaseMatter {
         let sizes = get_sizes(hard)?;
         
         let ss = sizes.ss;
-        let _xs = sizes.xs;  // Prefix with underscore to indicate intentionally unused
+        let xs = sizes.xs;  // Prefix with underscore to indicate intentionally unused
         let ls = sizes.ls;
         let cs = hs + ss; // Combined hard and soft size
         
@@ -476,7 +476,7 @@ impl BaseMatter {
         // Determine the hard size from the first byte
         let first_char = match first_byte {
             // ASCII range for letters and numbers
-            b'A'..=b'Z' | b'a'..=b'z' => (first_byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' => first_byte as char,
             // For 2-byte codes, we need to convert the first two bytes to base64
             _ => {
                 if qb2.len() < 2 {
