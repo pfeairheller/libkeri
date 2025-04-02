@@ -101,4 +101,11 @@ pub enum MatterError {
 
     #[error("Invalid base64 index: {0}")]
     InvalidBase64Index(usize),
+
+    #[error("Invalid soft error: {0}")]
+    InvalidSoftError(String),
+
+    #[error("Soft material error: {0}")]
+    SoftMaterialError(String),
+
 }

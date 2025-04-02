@@ -2,6 +2,7 @@ use crate::errors::MatterError;
 use std::collections::HashMap;
 use base64::{Engine, engine::general_purpose};
 use once_cell::sync::Lazy;
+use std::str;
 
 pub const PAD: &str = "_";
 
@@ -373,6 +374,9 @@ pub static TEX_DEX_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(||
 /// Undefined are left out so that inclusion(exclusion) via contains works.
 #[allow(dead_code)]
 pub mod dig_dex {
+    use std::collections::HashMap;
+    use once_cell::sync::Lazy;
+
     /// Blake3 256 bit digest self-addressing derivation
     pub const BLAKE3_256: &str = "E";
 
@@ -399,22 +403,26 @@ pub mod dig_dex {
 
     /// SHA2 512 bit digest self-addressing derivation
     pub const SHA2_512: &str = "0G";
-}
 
-#[allow(dead_code)]
-pub static DIG_DEX_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-    map.insert("BLAKE3_256", dig_dex::BLAKE3_256);
-    map.insert("BLAKE2B_256", dig_dex::BLAKE2B_256);
-    map.insert("BLAKE2S_256", dig_dex::BLAKE2S_256);
-    map.insert("SHA3_256", dig_dex::SHA3_256);
-    map.insert("SHA2_256", dig_dex::SHA2_256);
-    map.insert("BLAKE3_512", dig_dex::BLAKE3_512);
-    map.insert("BLAKE2B_512", dig_dex::BLAKE2B_512);
-    map.insert("SHA3_512", dig_dex::SHA3_512);
-    map.insert("SHA2_512", dig_dex::SHA2_512);
-    map
-});
+    #[allow(dead_code)]
+    pub static MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+        let mut map = HashMap::new();
+        map.insert("BLAKE3_256", BLAKE3_256);
+        map.insert("BLAKE2B_256", BLAKE2B_256);
+        map.insert("BLAKE2S_256", BLAKE2S_256);
+        map.insert("SHA3_256", SHA3_256);
+        map.insert("SHA2_256", SHA2_256);
+        map.insert("BLAKE3_512", BLAKE3_512);
+        map.insert("BLAKE2B_512", BLAKE2B_512);
+        map.insert("SHA3_512", SHA3_512);
+        map.insert("SHA2_512", SHA2_512);
+        map
+    });
+
+    pub static TUPLE: [&'static str; 9] = [BLAKE3_256, BLAKE2B_256, BLAKE2S_256, SHA3_256,
+        SHA2_256, BLAKE3_512, BLAKE2B_512, SHA3_512, SHA2_512];
+
+}
 
 
 /// NumCodex is codex of Base64 derivation codes for compactly representing
@@ -721,6 +729,9 @@ pub mod pre_dex {
         map
     });
 
+    pub static TUPLE: [&'static str; 18] = [ED25519N, ED25519, BLAKE3_256, BLAKE2B_256, BLAKE2S_256,
+        SHA3_256, SHA2_256, BLAKE3_512, BLAKE2B_512, SHA3_512, SHA2_512, ECDSA_256K1N, ECDSA_256K1,
+        ED448N, ED448, ED448_SIG, ECDSA_256R1N, ECDSA_256R1];
 }
 
 /// NonTransCodex is codex of all non-transferable derivation codes
@@ -753,6 +764,7 @@ pub mod non_trans_dex {
         map
     });
 
+    pub static TUPLE: [&'static str; 4] = [ED25519N, ECDSA_256K1N, ED448N, ECDSA_256R1N];
 }
 
 /// PreNonDigCodex is codex of all prefixive but non-digestive derivation codes
@@ -990,9 +1002,12 @@ pub trait Matter {
 
     /// Returns whether the code represents a digest
     fn is_digestive(&self) -> bool;
-    
+
     /// Returns whether the code represents a prefix
     fn is_prefixive(&self) -> bool;
+
+    /// Returns whether the code represents a prefix
+    fn is_special(&self) -> bool;
 }
 
 /// Common implementation for all Matter types.
@@ -1009,17 +1024,11 @@ impl BaseMatter {
                soft: Option<&str>,
                rize: Option<usize>,
     ) -> Result<Self, MatterError> {
-        // TODO: Implement this method to validate the code and raw material
-        // Check if the code exists in the Sizes table
-        // Verify that the raw material size matches the expected size for the code
-        // Return a MatterError if validation fails
-
         let code = code.ok_or_else(|| MatterError::EmptyMaterial(
             "Improper initialization need either (raw not None and code) or \
              (code and soft) or qb64b or qb64 or qb2.".to_string()
         ))?;
 
-        // Check that raw is provided
         let raw = raw.ok_or_else(|| MatterError::TypeError(
             String::from("Raw data must be provided")
         ))?;
@@ -1054,7 +1063,7 @@ impl BaseMatter {
             let size = (rize_val + ls as usize) / 3;
 
             // Handle small vs large variable size codes
-            if small_vrz_dex::MAP.contains_key(&code[0..1]) {
+            if small_vrz_dex::TUPLE.contains(&&code[0..1]) {
                 if size <= (64_usize.pow(2) - 1) {  // ss = 2
                     hs = 2;
                     let s = small_vrz_dex::TUPLE[ls as usize];
@@ -1074,7 +1083,7 @@ impl BaseMatter {
                         format!("Unsupported raw size for code={}", code)
                     ));
                 }
-            } else if large_vrz_dex::MAP.contains_key(&code[0..1]) {
+            } else if large_vrz_dex::TUPLE.contains(&&code[0..1]) {
                 if size <= (64_usize.pow(4) - 1) {  // ss = 4
                     hs = 4;
                     let s = large_vrz_dex::TUPLE[ls as usize];
@@ -1137,6 +1146,11 @@ impl BaseMatter {
 
     pub fn from_raw(raw: Option<&[u8]>) -> Result<Self, MatterError> {
         BaseMatter::new(raw, Some(mtr_dex::ED25519N), None, None)
+    }
+
+    pub fn from_qb64b(qb64b: Option<&[u8]>) -> Result<Self, MatterError> {
+        let qb64 = qb64b.and_then(|b| str::from_utf8(b).ok());
+        BaseMatter::from_qb64(qb64.unwrap_or(""))
     }
 
     /// Creates a new BaseMatter from a qb64 string
@@ -1234,7 +1248,7 @@ impl BaseMatter {
 
         Ok(Self {
             code: hard.to_string(),
-            soft: "".to_string(),
+            soft: soft.to_string(),
             raw,
         })
     }
@@ -1396,6 +1410,60 @@ impl BaseMatter {
         })
     }
 
+    /// Creates a new BaseMatter instance from soft and code components
+    ///
+    /// # Arguments
+    /// * `soft` - The soft part of the code as a string slice
+    /// * `code` - The hard part of the code as a string slice
+    ///
+    /// # Returns
+    /// * `Result<Self, MatterError>` - A BaseMatter instance or an error
+    fn from_soft_and_code(soft: &str, code: &str) -> Result<Self, MatterError> {
+        // Get the sizes associated with the given code
+        let sizes = get_sizes();
+        let size = sizes[code].clone();
+        let (hs, ss, xs, fs, ls) = (size.hs, size.ss, size.xs, size.fs.unwrap_or(0), size.ls);
+
+        // Check if code is a variable sized code
+        if fs == 0 {
+            return Err(MatterError::InvalidSoftError(format!(
+                "Unsupported variable sized code={} with fs={} for special soft={}.",
+                code, fs, soft
+            )));
+        }
+
+        // Check if it's not a special soft - validate ss, fs, hs, and ls
+        if !(ss > 0) || (fs == hs + ss && ls != 0) {
+            return Err(MatterError::InvalidSoftError(format!(
+                "Invalid soft size={} or lead={} or code={} fs={} when special soft.",
+                ss, ls, code, fs
+            )));
+        }
+
+        // Trim soft to correct length
+        let trimmed_soft = if soft.len() >= (ss - xs) as usize {
+            &soft[0..(ss - xs) as usize]
+        } else {
+            return Err(MatterError::SoftMaterialError(format!(
+                "Not enough chars in soft={} with ss={} xs={} for code={}.",
+                soft, ss, xs, code
+            )));
+        };
+
+        // Validate that soft contains only Base64 characters
+        if !is_base64(trimmed_soft) {
+            return Err(MatterError::InvalidSoftError(format!(
+                "Non Base64 chars in soft={}.", trimmed_soft
+            )));
+        }
+
+        // Return populated BaseMatter struct
+        Ok(BaseMatter {
+            code: code.to_string(),
+            soft: trimmed_soft.to_string(),
+            raw: Vec::new(), // Empty raw bytes as in Python: self._raw = b''
+        })
+    }
 
     fn infil(&self) -> Result<String, MatterError> {
         let code = &self.code; // hard part of full code == codex value
@@ -1634,6 +1702,15 @@ fn code_b2_to_b64(qb2: &[u8], n: usize) -> Result<String, MatterError> {
     Ok(result)
 }
 
+// Helper function to check if a string contains only Base64 characters
+fn is_base64(s: &str) -> bool {
+    s.chars().all(|c| {
+        (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '+' || c == '/' || c == '-' || c == '_'
+    })
+}
 
 
 impl Matter for BaseMatter {
@@ -1664,20 +1741,26 @@ impl Matter for BaseMatter {
     }
 
     fn is_transferable(&self) -> bool {
-        // TODO: Implement logic to check if code is transferable
-        unimplemented!("Check if code is transferable")
+        !non_trans_dex::TUPLE.contains(&(self.code.as_str()))
     }
 
     fn is_digestive(&self) -> bool {
-        // TODO: Implement logic to check if code is digestive
-        unimplemented!("Check if code is digestive")
+        dig_dex::TUPLE.contains(&(self.code.as_str()))
     }
 
     fn is_prefixive(&self) -> bool {
-        // TODO: Implement logic to check if code is prefixive
-        unimplemented!("Check if code is prefixive")
+        pre_dex::TUPLE.contains(&(self.code.as_str()))
     }
 
+    fn is_special(&self) -> bool {
+        let sizes = get_sizes();
+        let size = sizes[self.code.as_str()];
+
+        match size.fs {
+            Some(_) => size.ss > 0,
+            None => false,
+        }
+    }
 }
 
 
@@ -1723,6 +1806,7 @@ impl Matter for Seqner {
     fn is_transferable(&self) -> bool { self.base.is_transferable() }
     fn is_digestive(&self) -> bool { self.base.is_digestive() }
     fn is_prefixive(&self) -> bool { self.base.is_prefixive() }
+    fn is_special(&self) -> bool { self.base.is_special() }
 }
 
 /// Number represents ordinal counting numbers
@@ -1762,6 +1846,7 @@ impl Matter for Number {
     fn is_transferable(&self) -> bool { self.base.is_transferable() }
     fn is_digestive(&self) -> bool { self.base.is_digestive() }
     fn is_prefixive(&self) -> bool { self.base.is_prefixive() }
+    fn is_special(&self) -> bool { self.base.is_special() }
 }
 
 
@@ -1807,6 +1892,7 @@ impl Matter for Dater {
     fn is_transferable(&self) -> bool { self.base.is_transferable() }
     fn is_digestive(&self) -> bool { self.base.is_digestive() }
     fn is_prefixive(&self) -> bool { self.base.is_prefixive() }
+    fn is_special(&self) -> bool { self.base.is_special() }
 }
 
 #[cfg(test)]
@@ -1868,4 +1954,304 @@ mod tests {
         assert_eq!(matter2.qb64(), "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj");
 
     }
+
+    #[test]
+    fn test_matter_codex() {
+        let sizes = get_sizes();
+        // Test that MtrDex constants are defined correctly
+        assert_eq!(mtr_dex::ED25519_SEED, "A");
+        assert_eq!(mtr_dex::ED25519N, "B");
+        assert_eq!(mtr_dex::X25519, "C");
+        assert_eq!(mtr_dex::ED25519, "D");
+        assert_eq!(mtr_dex::BLAKE3_256, "E");
+        assert_eq!(mtr_dex::BLAKE2B_256, "F");
+        assert_eq!(mtr_dex::BLAKE2S_256, "G");
+        assert_eq!(mtr_dex::SHA3_256, "H");
+        assert_eq!(mtr_dex::SHA2_256, "I");
+
+        // Test that Sizage values are correct for some codes
+        let size = sizes[mtr_dex::ED25519_SEED];
+        assert_eq!(size.hs, 1);
+        assert_eq!(size.ss, 0);
+        assert_eq!(size.xs, 0);
+        assert_eq!(size.fs, Some(44));
+        assert_eq!(size.ls, 0);
+
+        let size = sizes[mtr_dex::ED25519N];
+        assert_eq!(size.hs, 1);
+        assert_eq!(size.ss, 0);
+        assert_eq!(size.xs, 0);
+        assert_eq!(size.fs, Some(44));
+        assert_eq!(size.ls, 0);
+
+        let size = sizes[mtr_dex::BLAKE3_256];
+        assert_eq!(size.hs, 1);
+        assert_eq!(size.ss, 0);
+        assert_eq!(size.xs, 0);
+        assert_eq!(size.fs, Some(44));
+        assert_eq!(size.ls, 0);
+
+        // Test raw_size function
+        assert_eq!(raw_size(mtr_dex::ED25519).unwrap(), 32);
+        assert_eq!(raw_size(mtr_dex::ED25519N).unwrap(), 32);
+        assert_eq!(raw_size(mtr_dex::BLAKE3_256).unwrap(), 32);
+    }
+
+    #[test]
+    fn test_matter_basic() {
+        // Test with empty material
+        let result = BaseMatter::new(None, None, None, None);
+        assert!(result.is_err());
+
+        // Test with raw bytes but no code
+        let verkey = b"iN\x89Gi\xe6\xc3&~\x8bG|%\x90(L\xd6G\xddB\xef`\x07\xd2T\xfc\xe1\xcd.\x9b\xe4#";
+        let result = BaseMatter::new(Some(verkey), None, None, None);
+        assert!(result.is_err());
+
+        // Test with valid raw and code
+        let result = BaseMatter::new(Some(verkey), Some(mtr_dex::ED25519N), None, None);
+        assert!(result.is_ok());
+        let matter = result.unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.raw(), verkey);
+
+        // Test qb64 generation
+        let qb64 = matter.qb64();
+        assert_eq!(qb64, "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj");
+
+        // Test from qb64
+        let matter2 = BaseMatter::from_qb64(&qb64).unwrap();
+        assert_eq!(matter2.code(), mtr_dex::ED25519N);
+        assert_eq!(matter2.raw(), verkey);
+        assert_eq!(matter2.qb64(), qb64);
+
+        // Test qb2 generation and conversion
+        let qb2 = matter.qb2();
+        let matter3 = BaseMatter::from_qb2(qb2.as_slice()).unwrap();
+        assert_eq!(matter3.code(), mtr_dex::ED25519N);
+        assert_eq!(matter3.raw(), verkey);
+        assert_eq!(matter3.qb64(), qb64);
+
+        // Test transferable property
+        assert!(!matter.is_transferable());
+
+        // Test with transferable code
+        let result = BaseMatter::new(Some(verkey), Some(mtr_dex::ED25519), None, None);
+        assert!(result.is_ok());
+        let matter = result.unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519);
+        assert!(matter.is_transferable());
+
+        // Test digestive property
+        assert!(!matter.is_digestive());
+
+        // Test with digest code
+        let digest = [0u8; 32];
+        let result = BaseMatter::new(Some(digest.as_slice()), Some(mtr_dex::BLAKE3_256), None, None);
+        assert!(result.is_ok());
+        let matter = result.unwrap();
+        assert_eq!(matter.code(), mtr_dex::BLAKE3_256);
+        assert!(matter.is_digestive());
+
+        // Test prefixive property
+        assert!(matter.is_prefixive());
+    }
+
+    #[test]
+    fn test_matter_from_qb64() {
+        let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
+        let matter = BaseMatter::from_qb64(prefix).unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.qb64(), prefix);
+
+        // Test with full identifier
+        let both = format!("{}:mystuff/mypath/toresource?query=what#fragment", prefix);
+        let matter = BaseMatter::from_qb64(&both).unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.qb64(), prefix);
+        assert!(!matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(matter.is_prefixive());
+    }
+
+    #[test]
+    fn test_matter_from_qb64b() {
+        let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
+        let prefixb = prefix.as_bytes();
+        let matter = BaseMatter::from_qb64b(Some(prefixb)).unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.qb64(), prefix);
+
+        // Test with full identifier
+        let both = format!("{}:mystuff/mypath/toresource?query=what#fragment", prefix);
+        let bothb = both.as_bytes();
+        let matter = BaseMatter::from_qb64b(Some(bothb)).unwrap();
+        assert_eq!(matter.code(), mtr_dex::ED25519N);
+        assert_eq!(matter.qb64(), prefix);
+        assert!(!matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(matter.is_prefixive());
+    }
+
+    #[test]
+    fn test_matter_from_qb2() {
+        let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
+        let matter = BaseMatter::from_qb64(prefix).unwrap();
+        let qb2 = matter.qb2();
+
+        let matter2 = BaseMatter::from_qb2(&qb2).unwrap();
+        assert_eq!(matter2.code(), mtr_dex::ED25519N);
+        assert_eq!(matter2.qb64(), prefix);
+        assert!(!matter2.is_transferable());
+        assert!(!matter2.is_digestive());
+        assert!(matter2.is_prefixive());
+    }
+
+    #[test]
+    fn test_matter_with_fixed_sizes() {
+        // Test TBD0 code with fixed size and lead size 0
+        let code = mtr_dex::TBD0;
+        let raw = b"abc";
+        let qb64 = "1___YWJj";
+
+        let matter = BaseMatter::new(Some(raw), Some(code), None, None).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test TBD1 code with fixed size and lead size 1
+        let code = mtr_dex::TBD1;
+        let raw = b"ab";
+        let qb64 = "2___AGFi";
+
+        let matter = BaseMatter::new(Some(raw), Some(code), None, None).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test TBD2 code with fixed size and lead size 2
+        let code = mtr_dex::TBD2;
+        let raw = b"z";
+        let qb64 = "3___AAB6";
+
+        let matter = BaseMatter::new(Some(raw), Some(code), None, None).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+    }
+
+    #[test]
+    fn test_matter_with_variable_sizes() {
+        // Test Bytes_L0 code with variable size and lead size 0
+        let code = mtr_dex::BYTES_L0;
+        let raw = b"abcdef";
+        let qb64 = "4BACYWJjZGVm";
+
+        let matter = BaseMatter::new(Some(raw), Some(code), None, None).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test Bytes_L1 code with variable size and lead size 1
+        let code = mtr_dex::BYTES_L1;
+        let raw = b"abcde";
+        let qb64 = "5BACAGFiY2Rl";
+
+        let matter = BaseMatter::new(Some(raw), Some(code), None, None).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test Bytes_L2 code with variable size and lead size 2
+        let code = mtr_dex::BYTES_L2;
+        let raw = b"abcd";
+        let qb64 = "6BACAABhYmNk";
+
+        let matter = BaseMatter::new(Some(raw), Some(code), None, None).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_transferable());
+        assert!(!matter.is_digestive());
+        assert!(!matter.is_prefixive());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.raw(), raw);
+    }
+
+    #[test]
+    fn test_matter_with_special_codes() {
+        // Test Tag3 code with special soft value
+        let code = mtr_dex::TAG3;
+        let soft = "icp";
+        let qb64 = "Xicp";
+        let raw = b"";
+
+        let matter = BaseMatter::from_soft_and_code(soft, code).unwrap();
+        assert_eq!(matter.code(), code);
+        assert_eq!(matter.soft.as_str(), soft);
+        assert_eq!(matter.raw(), raw);
+        assert_eq!(matter.qb64(), qb64);
+        assert!(matter.is_special());
+
+        let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        assert_eq!(matter2.code(), code);
+        assert_eq!(matter2.soft.as_str(), soft);
+        assert_eq!(matter2.raw(), raw);
+
+        // Test TBD0S code with special soft value and non-empty raw
+        // let code = mtr_dex::TBD0S;
+        // let soft = "TG";
+        // let raw = b"uvwx";
+        // let qb64 = "1__-TGB1dnd4";
+        //
+        // let matter = BaseMatter::from_soft_and_code(soft, code).unwrap();
+        // assert_eq!(matter.code(), code);
+        // assert_eq!(matter.soft, soft);
+        // assert_eq!(matter.raw(), b"");
+        // assert_eq!(matter.qb64(), qb64);
+        // assert!(matter.is_special());
+        //
+        // let matter2 = BaseMatter::from_qb64(qb64).unwrap();
+        // assert_eq!(matter2.code(), code);
+        // assert_eq!(matter2.soft, soft);
+        // assert_eq!(matter2.raw(), raw);
+    }
+
 }
