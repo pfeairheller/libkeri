@@ -2,19 +2,20 @@
 
 // Error handling module
 mod errors;
-// Core cryptographic material module
-mod matter;
 
 // Re-export Error type
-pub use errors::Error;
-pub use errors::Result;
-pub use matter::*;
+pub use crate::errors::Error;
+
+mod cesr;
+
+pub use crate::cesr::Matter;
+
 
 /// Initialize the KERI library
-pub fn init() -> Result<()> {
+pub fn init() -> Result<(), Error> {
     // Initialize sodiumoxide
     if let Err(_) = sodiumoxide::init() {
-        return Err(Error::Crypto("Failed to initialize sodiumoxide".into()));
+        return Err(Error::CryptographicError("Failed to initialize sodiumoxide".into()));
     }
     
     Ok(())

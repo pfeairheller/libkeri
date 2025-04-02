@@ -313,3 +313,206 @@ At the end, please do a final pass to ensure there's no unused or orphaned code.
 
 By the end, you’ll have an incremental, well-structured codebase that closely follows KERIpy’s design while taking advantage of Rust’s idioms and best practices.
 
+
+### Fix exfil prompt
+```text
+Can you analyze the following Python implementation of _exfil and fix the BaseMatter.exfil function in matter.rs to match the exact logic from the Python version below:
+
+    def _exfil(self, qb64b):
+        """
+        Extracts self.code and self.raw from qualified base64 qb64b of type
+        str or bytes or bytearray or memoryview
+
+        Detects if str and converts to bytes
+
+        Parameters:
+            qb64b (str | bytes | bytearray | memoryview): fully qualified base64 from stream
+
+        """
+        if not qb64b:  # empty need more bytes
+            raise ShortageError("Empty material.")
+
+        first = qb64b[:1]  # extract first char code selector
+        if isinstance(first, memoryview):
+            first = bytes(first)
+        if hasattr(first, "decode"):
+            first = first.decode()  # converts bytes/bytearray to str
+        if first not in self.Hards:
+            if first[0] == '-':
+                raise UnexpectedCountCodeError("Unexpected count code start"
+                                               "while extracing Matter.")
+            elif first[0] == '_':
+                raise UnexpectedOpCodeError("Unexpected  op code start"
+                                            "while extracing Matter.")
+            else:
+                raise UnexpectedCodeError(f"Unsupported code start char={first}.")
+
+        hs = self.Hards[first]  # get hard code size
+        if len(qb64b) < hs:  # need more bytes
+            raise ShortageError(f"Need {hs - len(qb64b)} more characters.")
+
+        hard = qb64b[:hs]  # extract hard code
+        if isinstance(hard, memoryview):
+            hard = bytes(hard)
+        if hasattr(hard, "decode"):
+            hard = hard.decode()  # converts bytes/bytearray to str
+        if hard not in self.Sizes:
+            raise UnexpectedCodeError(f"Unsupported code ={hard}.")
+
+        hs, ss, xs, fs, ls = self.Sizes[hard]  # assumes hs in both tables match
+        cs = hs + ss  # both hs and ss
+        # assumes that unit tests on Matter .Sizes .Hards and .Bards ensure that
+        # these are well formed.
+        # when fs is None then ss > 0 otherwise fs > hs + ss when ss > 0
+
+
+        # extract soft chars including xtra, empty when ss==0 and xs == 0
+        # assumes that when ss == 0 then xs must be 0
+        soft = qb64b[hs:hs+ss]
+        if isinstance(soft, memoryview):
+            soft = bytes(soft)
+        if hasattr(soft, "decode"):
+            soft = soft.decode()  # converts bytes/bytearray to str
+        xtra = soft[:xs]  # extract xtra if any from front of soft
+        soft = soft[xs:]  # strip xtra from soft
+        if xtra != f"{self.Pad * xs}":
+            raise UnexpectedCodeError(f"Invalid prepad xtra ={xtra}.")
+
+        if not fs:  # compute fs from soft from ss part which provides size B64
+            # compute variable size as int may have value 0
+            fs = (b64ToInt(soft) * 4) + cs
+
+        if len(qb64b) < fs:  # need more bytes
+            raise ShortageError(f"Need {fs - len(qb64b)} more chars.")
+
+        qb64b = qb64b[:fs]  # fully qualified primitive code plus material
+        if isinstance(qb64b, memoryview):
+            qb64b = bytes(qb64b)
+        if hasattr(qb64b, "encode"):  # only convert extracted chars from stream
+            qb64b = qb64b.encode()  # converts str to bytes
+
+        # check for non-zeroed pad bits and/or lead bytes
+        # net prepad ps == cs % 4 (remainer).  Assumes ps != 3 i.e ps in (0,1,2)
+        # To ensure number of prepad bytes and prepad chars are same.
+        # need net prepad chars ps to invert using decodeB64 of lead + raw
+
+        ps = cs % 4  # net prepad bytes to ensure 24 bit align when encodeB64
+        base =  ps * b'A' + qb64b[cs:]  # prepad ps 'A's to  B64 of (lead + raw)
+        paw = decodeB64(base)  # now should have ps + ls leading sextexts of zeros
+        raw = paw[ps+ls:]  # remove prepad midpat bytes to invert back to raw
+        # ensure midpad bytes are zero
+        pi = int.from_bytes(paw[:ps+ls], "big")
+        if pi != 0:
+            raise ConversionError(f"Nonzero midpad bytes=0x{pi:0{(ps + ls) * 2}x}.")
+
+        if len(raw) != ((len(qb64b) - cs) * 3 // 4) - ls:  # exact lengths
+            raise ConversionError(f"Improperly qualified material = {qb64b}")
+
+        self._code = hard  # hard only str
+        self._soft = soft  # soft only str
+        self._raw = raw  # ensure bytes for crypto ops, may be empty
+
+```
+
+### Prompt for infil
+```text
+Now lets fix the BaseMatter.infil in matter.rs method with Rust code that implements the same logic as the following Python implemention of _infil:
+
+    def _infil(self):
+        """
+        Create text domain representation
+
+        Returns:
+            primitive (bytes): fully qualified base64 characters.
+        """
+        code = self.code  # hard part of full code == codex value
+        both = self.both  # code + soft, soft may be empty
+        raw = self.raw  # bytes or bytearray, raw may be empty
+        rs = len(raw)  # raw size
+        hs, ss, xs, fs, ls = self.Sizes[code]
+        cs = hs + ss
+        # assumes unit tests on Matter.Sizes ensure valid size entries
+
+        if cs != len(both):
+            InvalidCodeSizeError(f"Invalid full code={both} for sizes {hs=} and"
+                                f" {ss=}.")
+
+        if not fs:  # variable sized
+            # Tests on .Sizes table must ensure ls in (0,1,2) and cs % 4 == 0 but
+            # can't know the variable size. So instance methods must ensure that
+            # (ls + rs) % 3 == 0 i.e. both full code (B64) and lead+raw (B2)
+            # are both 24 bit aligned.
+            # If so then should not need following check.
+            if (ls + rs) % 3 or cs % 4:
+                raise InvalidCodeSizeError(f"Invalid full code{both=} with "
+                                           f"variable raw size={rs} given "
+                                           f" {cs=}, {hs=}, {ss=}, {fs=}, and "
+                                           f"{ls=}.")
+
+            # When ls+rs is 24 bit aligned then encodeB64 has no trailing
+            # pad chars that need to be stripped. So simply prepad raw with
+            # ls zero bytes and convert (encodeB64).
+            full = (both.encode("utf-8") + encodeB64(bytes([0] * ls) + raw))
+
+        else:  # fixed size
+            ps = (3 - ((rs + ls) % 3)) % 3  # net pad size given raw with lead
+            # net pad size must equal both code size remainder so that primitive
+            # both + converted padded raw is fs long. Assumes ls in (0,1,2) and
+            # cs % 4 != 3, fs % 4 == 0. Sizes table test must ensure these properties.
+            # If so then should not need following check.
+            if ps != (cs % 4):  # given cs % 4 != 3 then cs % 4 is pad size
+                raise InvalidCodeSizeError(f"Invalid full code{both=} with "
+                                           f"fixed raw size={rs} given "
+                                           f" {cs=}, {hs=}, {ss=}, {fs=}, and "
+                                           f"{ls=}.")
+
+            # Predpad raw so we midpad the full primitive. Prepad with ps+ls
+            # zero bytes ensures encodeB64 of prepad+lead+raw has no trailing
+            # pad characters. Finally skip first ps == cs % 4 of the converted
+            # characters to ensure that when full code is prepended, the full
+            # primitive size is fs but midpad bits are zeros.
+            full = (both.encode("utf-8") + encodeB64(bytes([0] * (ps + ls)) + raw)[ps:])
+
+        if (len(full) % 4) or (fs and len(full) != fs):
+            raise InvalidCodeSizeError(f"Invalid full size given code{both=} "
+                                       f" with raw size={rs}, {cs=}, {hs=}, "
+                                       f"{ss=}, {xs=} {fs=}, and {ls=}.")
+
+        return full
+
+```
+
+### Binfil
+
+```test
+Now we need to update BaseMatter.binfil to match the Python version of _binfil below:
+
+    def _binfil(self):
+        """
+        Create binary domain representation
+
+        Returns bytes of fully qualified base2 bytes, that is .qb2
+        self.code converted to Base2 + self.raw left shifted with pad bits
+        equivalent of Base64 decode of .qb64 into .qb2
+        """
+        code = self.code  # hard part of full code == codex value
+        both = self.both  # code + soft, soft may be empty
+        raw = self.raw  # bytes or bytearray may be empty
+
+        hs, ss, xs, fs, ls = self.Sizes[code]
+        cs = hs + ss
+        # assumes unit tests on Matter.Sizes ensure valid size entries
+        n = sceil(cs * 3 / 4)  # number of b2 bytes to hold b64 code
+        # convert code both to right align b2 int then left shift in pad bits
+        # then convert to bytes
+        bcode = (b64ToInt(both) << (2 * (cs % 4))).to_bytes(n, 'big')
+        full = bcode + bytes([0] * ls) + raw  # includes lead bytes
+
+        bfs = len(full)
+        if not fs:  # compute fs
+            fs = hs + ss + (len(raw) + ls) * 4 // 3 # hs + ss + (size * 4)
+        if bfs % 3 or (bfs * 4 // 3) != fs:  # invalid size
+            raise InvalidCodeSizeError(f"Invalid full code={both} for raw size"
+                                       f"={len(raw)}.")
+        return full
+```
