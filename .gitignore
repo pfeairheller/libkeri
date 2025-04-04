@@ -2,3 +2,4 @@
 .aider*
 .idea
 *.py
+/docs/sample_python_source/test.rs

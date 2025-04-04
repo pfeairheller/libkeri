@@ -63,6 +63,9 @@ pub enum MatterError {
     #[error("Unexpected code: {0}")]
     UnexpectedCodeError(String),
 
+    #[error("Unsupported code: {0}")]
+    UnsupportedCodeError(String),
+
     #[error("Conversion error: {0}")]
     ConversionError(String),
 
@@ -108,4 +111,51 @@ pub enum MatterError {
     #[error("Soft material error: {0}")]
     SoftMaterialError(String),
 
+    #[error("Empty material error: {0}")]
+    EmptyMaterialError(String),
+
+    #[error("Invalid var index error: {0}")]
+    InvalidVarIndexError(String),
+
+    #[error("Invalid code size error: {0}")]
+    InvalidCodeSizeError(String),
+
+    #[error("Raw material error: {0}")]
+    RawMaterialError(String),
+
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
+    #[error("Value error: {0}")]
+    ValueError(String),
+
+    #[error("Encoding error: {0}")]
+    EncodingError(String),
+
+    #[error("Overflow error: {0}")]
+    OverflowError(String),
+
+    #[error("Invalid variable index: {0}")]
+    InvalidVarIndex(String),
+
+    #[error("Base64 encoding error: {0}")]
+    Base64Error(String),
+
+    #[error("Invalid key length: expected {expected}, got {actual}")]
+    InvalidKeyLength { expected: usize, actual: usize },
+
+    #[error("Invalid signature length: expected {expected}, got {actual}")]
+    InvalidSignatureLength { expected: usize, actual: usize },
+
+    #[error("Verification error: {0}")]
+    VerificationError(String),
+
+    #[error("Secp256k1 error: {0}")]
+    Secp256k1Error(String),
+
+    #[error("Secp256r1 error: {0}")]
+    Secp256r1Error(String),
+
+    #[error("Hash error: {0}")]
+    HashError(String),
 }

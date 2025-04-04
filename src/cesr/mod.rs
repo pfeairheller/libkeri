@@ -4,6 +4,22 @@ use base64::{Engine, engine::general_purpose};
 use once_cell::sync::Lazy;
 use std::str;
 
+mod seqner;
+mod number;
+mod dater;
+mod tagger;
+mod ilker;
+mod texter;
+mod bexter;
+mod labeler;
+mod verfer;
+mod cigar;
+mod diger;
+mod prefixer;
+mod saider;
+mod indexing;
+mod counting;
+
 pub const PAD: &str = "_";
 
 /// Maps Base64 index to corresponding character
@@ -1068,7 +1084,7 @@ impl BaseMatter {
                     hs = 2;
                     let s = small_vrz_dex::TUPLE[ls as usize];
                     code_val = format!("{}{}", s, &code[1..hs as usize]);
-                    soft_val = int_to_b64(size, 2);
+                    soft_val = int_to_b64(size as u32, 2);
                 } else if size <= (64_usize.pow(4) - 1) {  // ss = 4 make big version
                     hs = 4;
                     let s = large_vrz_dex::TUPLE[ls as usize];
@@ -1077,7 +1093,7 @@ impl BaseMatter {
                                        "A".repeat(hs as usize - 2),
                                        &code[1..2]
                     );
-                    soft_val = int_to_b64(size, 4);
+                    soft_val = int_to_b64(size as u32, 4);
                 } else {
                     return Err(MatterError::InvalidVarRawSize(
                         format!("Unsupported raw size for code={}", code)
@@ -1088,7 +1104,7 @@ impl BaseMatter {
                     hs = 4;
                     let s = large_vrz_dex::TUPLE[ls as usize];
                     code_val = format!("{}{}", s, &code[1..hs as usize]);
-                    soft_val = int_to_b64(size, 4);
+                    soft_val = int_to_b64(size as u32, 4);
                 } else {
                     return Err(MatterError::InvalidVarRawSize(
                         format!("Unsupported raw size for large code={}. {} <= {}",
@@ -1615,32 +1631,20 @@ fn b64_to_int(b64_str: &str) -> u32 {
     result
 }
 
-fn int_to_b64(i: usize, l: usize) -> String {
-    let mut result = Vec::new();
-    let mut value = i;
+// Helper function to convert integer to base64 string
+fn int_to_b64(num: u32, length: usize) -> String {
+    const B64_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-    loop {
-        // Get character for current value % 64
-        // Replace B64_CHR_BY_IDX with the appropriate array or function that maps indices to Base64 characters
-        let idx = (value % 64) as u8;
-        let ch = B64_CHR_BY_IDX[&idx];
-        result.push(ch);
+    let mut result = String::with_capacity(length);
+    let mut n = num;
 
-        value /= 64; // Integer division in Rust (equivalent to Python's //)
-
-        if value == 0 {
-            break;
-        }
+    for _ in 0..length {
+        let idx = (n % 64) as usize;
+        result.insert(0, B64_CHARS[idx] as char);
+        n /= 64;
     }
 
-    // Pad with 'A' if necessary
-    while result.len() < l {
-        result.push('A');
-    }
-
-    // Reverse the result and convert to string
-    result.reverse();
-    result.into_iter().collect()
+    result
 }
 
 fn raw_size(code: &str) -> Result<usize, MatterError> {
@@ -1761,138 +1765,6 @@ impl Matter for BaseMatter {
             None => false,
         }
     }
-}
-
-
-/// Seqner represents sequence numbers or first-seen numbers
-pub struct Seqner {
-    base: BaseMatter,
-}
-
-impl Seqner {
-    /// Creates a new Seqner from a sequence number
-    pub fn new(sn: u64) -> Result<Self, MatterError> {
-        // TODO: Implement conversion of sequence number to raw bytes
-        // 1. Convert the sequence number to big-endian bytes
-        // 2. Ensure the size matches the expected size for Salt_128
-        // 3. Create a BaseMatter with the appropriate code
-        let raw = sn.to_be_bytes().to_vec();
-        let code = "0A"; // MtrDex::Salt_128
-
-        Ok(Self {
-            base: BaseMatter::new(Some(&*raw), Some(code), None, None)?,
-        })
-    }
-
-    /// Returns the sequence number
-    pub fn sn(&self) -> u64 {
-        // TODO: Implement conversion from raw bytes to u64
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&self.base.raw()[0..8]);
-        u64::from_be_bytes(bytes)
-    }
-
-    /// Returns hex string representation of the sequence number
-    pub fn snh(&self) -> String {
-        format!("{:x}", self.sn())
-    }
-}
-
-impl Matter for Seqner {
-    fn code(&self) -> &str { self.base.code() }
-    fn raw(&self) -> &[u8] { self.base.raw() }
-    fn qb64(&self) -> String { self.base.qb64() }
-    fn qb2(&self) -> Vec<u8> { self.base.qb2() }
-    fn is_transferable(&self) -> bool { self.base.is_transferable() }
-    fn is_digestive(&self) -> bool { self.base.is_digestive() }
-    fn is_prefixive(&self) -> bool { self.base.is_prefixive() }
-    fn is_special(&self) -> bool { self.base.is_special() }
-}
-
-/// Number represents ordinal counting numbers
-pub struct Number {
-    base: BaseMatter,
-}
-
-impl Number {
-    /// Creates a new Number from a numeric value
-    pub fn new(num: u128, code: &str) -> Result<Self, MatterError> {
-        // TODO: Implement conversion of numeric value to raw bytes
-        // 1. Check if the provided code is valid for Number
-        // 2. Convert the number to big-endian bytes
-        // 3. Verify the number fits within the size allowed by the code
-        // 4. Create a BaseMatter with the provided code and raw bytes
-        let raw = num.to_be_bytes().to_vec();
-
-        Ok(Self {
-            base: BaseMatter::new(Some(&*raw), Some(code), None, None)?,
-        })
-    }
-
-    /// Returns the numeric value
-    pub fn num(&self) -> u128 {
-        // TODO: Implement conversion from raw bytes to u128
-        let mut bytes = [0u8; 16];
-        bytes.copy_from_slice(&self.base.raw()[0..16]);
-        u128::from_be_bytes(bytes)
-    }
-}
-
-impl Matter for Number {
-    fn code(&self) -> &str { self.base.code() }
-    fn raw(&self) -> &[u8] { self.base.raw() }
-    fn qb64(&self) -> String { self.base.qb64() }
-    fn qb2(&self) -> Vec<u8> { self.base.qb2() }
-    fn is_transferable(&self) -> bool { self.base.is_transferable() }
-    fn is_digestive(&self) -> bool { self.base.is_digestive() }
-    fn is_prefixive(&self) -> bool { self.base.is_prefixive() }
-    fn is_special(&self) -> bool { self.base.is_special() }
-}
-
-
-/// Dater represents RFC-3339 formatted datetimes
-pub struct Dater {
-    base: BaseMatter,
-}
-
-impl Dater {
-    /// Creates a new Dater from a DateTime<Utc> object
-    pub fn new(dt: chrono::DateTime<chrono::Utc>) -> Result<Self, MatterError> {
-        // TODO: Implement conversion of datetime to raw bytes and create BaseMatter
-        let dt_str = dt.to_rfc3339();
-        let raw = dt_str.as_bytes().to_vec();
-        let code = "1A"; // Appropriate code for datetime
-
-        Ok(Self {
-            base: BaseMatter::new(Some(&*raw), Some(code), None, None)?,
-        })
-    }
-
-    /// Returns the datetime string
-    pub fn dts(&self) -> String {
-        // TODO: Implement conversion from raw bytes to datetime string
-        String::from_utf8_lossy(self.base.raw()).to_string()
-    }
-
-    /// Returns the datetime as a DateTime<Utc> object
-    pub fn dt(&self) -> Result<chrono::DateTime<chrono::Utc>, MatterError> {
-        // TODO: Implement conversion from raw bytes to DateTime<Utc>
-        let dts = self.dts();
-        chrono::DateTime::parse_from_rfc3339(&dts)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .map_err(|_| MatterError::InvalidFormat)
-    }
-}
-
-impl Matter for Dater {
-    fn code(&self) -> &str { self.base.code() }
-    fn raw(&self) -> &[u8] { self.base.raw() }
-    fn qb64(&self) -> String { self.base.qb64() }
-    fn qb2(&self) -> Vec<u8> { self.base.qb2() }
-    fn is_transferable(&self) -> bool { self.base.is_transferable() }
-    fn is_digestive(&self) -> bool { self.base.is_digestive() }
-    fn is_prefixive(&self) -> bool { self.base.is_prefixive() }
-    fn is_special(&self) -> bool { self.base.is_special() }
 }
 
 #[cfg(test)]
