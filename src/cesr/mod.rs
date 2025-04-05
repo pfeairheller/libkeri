@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use base64::{Engine, engine::general_purpose};
 use once_cell::sync::Lazy;
 use std::str;
+use num_bigint::BigUint;
+use num_traits::ToPrimitive;
 
 mod seqner;
 mod number;
@@ -19,6 +21,18 @@ mod prefixer;
 mod saider;
 mod indexing;
 mod counting;
+
+
+#[derive(Debug)]
+pub struct Versionage {
+    major: u32,
+    minor: u32,
+}
+pub const VERSION: Versionage = Versionage { major: 1, minor: 0 };
+#[allow(dead_code)]
+pub const VRSN_1_0: Versionage = Versionage { major: 1, minor: 0 };
+#[allow(dead_code)]
+pub const VRSN_2_0: Versionage = Versionage { major: 2, minor: 0 };
 
 pub const PAD: &str = "_";
 
@@ -488,6 +502,7 @@ pub mod num_dex {
         map
     });
 
+    pub static TUPLE: [&'static str; 8] = [SHORT, LONG, TALL, BIG, LARGE, GREAT, HUGE, VAST];
 }
 
 
@@ -1009,6 +1024,9 @@ pub trait Matter {
 
     /// Returns base64 fully qualified representation
     fn qb64(&self) -> String;
+
+    /// Returns base64 fully qualified representation
+    fn qb64b(&self) -> Vec<u8>;
 
     /// Returns binary fully qualified representation
     fn qb2(&self) -> Vec<u8>;
@@ -1659,51 +1677,100 @@ fn raw_size(code: &str) -> Result<usize, MatterError> {
     Ok((((fs - cs) * 3 / 4) - size.ls) as usize)
 }
 
-/// Extract n sextets from binary data
-fn nab_sextets(qb2: &[u8], n: usize) -> Result<Vec<u8>, MatterError> {
-    let mut result = Vec::with_capacity(n);
-    let mut accumulator: u16 = 0;
-    let mut bits = 0;
+/// Nab l sextets from front of b
+///
+/// # Returns
+/// Bytes containing first l sextets from front (left) of b as a Vec<u8>.
+/// Length of bytes returned is minimum sufficient to hold all l sextets.
+/// Last byte returned is right bit padded with zeros which is compatible
+/// with mid padded codes on front of primitives.
+///
+/// # Parameters
+/// * `b`: target from which to nab sextets
+/// * `l`: number of sextets to nab from front of b
+///
+/// # Errors
+/// Returns an error message if there aren't enough bytes in b to nab l sextets.
+pub fn nab_sextets(b: &[u8], l: usize) -> Result<Vec<u8>, MatterError> {
+    // Calculate number of bytes needed for l sextets (ceiling of l*3/4)
+    let n = (l * 3 + 3) / 4; // Equivalent to ceiling of l*3/4
 
-    let mut i = 0;
-    let mut sextets_extracted = 0;
-
-    while sextets_extracted < n && i < qb2.len() {
-        accumulator = (accumulator << 8) | (qb2[i] as u16);
-        bits += 8;
-        i += 1;
-
-        while bits >= 6 && sextets_extracted < n {
-            bits -= 6;
-            let sextet = ((accumulator >> bits) & 0x3F) as u8;  // 0x3F = 63 (6 bits)
-            result.push(sextet);
-            sextets_extracted += 1;
-        }
+    if n > b.len() {
+        return Err(MatterError::ShortageError(format!("Not enough bytes in {:?} to nab {} sextets.", b, l)));
     }
 
-    if sextets_extracted < n {
-        return Err(MatterError::Shortage(
-            format!("Not enough data to extract {} sextets", n)
-        ));
+    // Extract the first n bytes and convert to a BigUint
+    let bytes = &b[..n];
+    let mut i = BigUint::from_bytes_be(bytes);
+
+    // Calculate padding bits based on l % 4
+    let p = 2 * (l % 4);
+
+    if p > 0 {
+        // Apply bit shifting operations
+        // i >>= p  (strip off last bits)
+        i >>= p;
+
+        // i <<= p  (pad with empty bits)
+        i <<= p;
+    }
+
+    // Convert back to bytes
+    let mut result = i.to_bytes_be();
+
+    // Ensure the result is exactly n bytes by padding with zeros if needed
+    if result.len() < n {
+        let padding = vec![0; n - result.len()];
+        let mut padded_result = padding;
+        padded_result.extend(result);
+        result = padded_result;
     }
 
     Ok(result)
 }
 
-/// Convert binary code to base64 string
-fn code_b2_to_b64(qb2: &[u8], n: usize) -> Result<String, MatterError> {
-    let sextets = nab_sextets(qb2, n)?;
-    let mut result = String::with_capacity(n);
+/// Convert l sextets from base2 b to base64
+///
+/// # Returns
+/// A String containing the conversion (encode) of l Base2 sextets from front of b
+/// to Base64 chars. One char for each of l sextets from front (left) of b.
+///
+/// This is useful for encoding as code characters, sextets from the front of
+/// a Base2 bytes. Must provide l because of ambiguity between l=3
+/// and l=4. Both require 3 bytes in b. Trailing pad bits are removed so
+/// returned sextets as characters are right aligned.
+///
+/// # Parameters
+/// * `b`: target from which to nab sextets
+/// * `l`: number of sextets to convert from front of b
+///
+/// # Errors
+/// Returns an error message if there aren't enough bytes in b to nab l sextets.
+pub fn code_b2_to_b64(b: &[u8], l: usize) -> Result<String, MatterError> {
+    // Calculate number of bytes needed for l sextets (ceiling of l*3/4)
+    let n = (l * 3 + 3) / 4; // Equivalent to ceiling of l*3/4
 
-    for sextet in sextets {
-        if let Some(c) = B64_CHR_BY_IDX.get(&(sextet)) {
-            result.push(*c);
-        } else {
-            return Err(MatterError::InvalidBase64Index(sextet as usize));
-        }
+    if n > b.len() {
+        return Err(MatterError::ShortageError(format!("Not enough bytes in {:?} to nab {} sextets.", b, l)));
     }
 
-    Ok(result)
+    // Extract the first n bytes and convert to a BigUint
+    let bytes = &b[..n];
+    let i = BigUint::from_bytes_be(bytes);
+
+    // Calculate trailing bit size in bits
+    let tbs = 2 * (l % 4);
+
+    // Right shift out trailing bits to make right aligned
+    let adjusted_i = if tbs > 0 {
+        i >> tbs
+    } else {
+        i
+    };
+
+    let result = adjusted_i.to_u64().unwrap_or_else(|| 0);
+    // Return as Base64
+    Ok(int_to_b64(result as u32, l))
 }
 
 // Helper function to check if a string contains only Base64 characters
@@ -1727,19 +1794,16 @@ impl Matter for BaseMatter {
     }
 
     fn qb64(&self) -> String {
-        // TODO: Implement conversion of code and raw to qb64
-        // 1. Encode the raw material using base64
-        // 2. Prepend the code
-        // 3. Ensure proper padding if needed
         let result = self.infil();
         result.unwrap()
     }
 
+    fn qb64b(&self) -> Vec<u8> {
+        let result = self.infil();
+        result.unwrap().into_bytes()
+    }
+
     fn qb2(&self) -> Vec<u8> {
-        // TODO: Implement conversion of code and raw to qb2 binary format
-        // 1. Convert code to binary representation
-        // 2. Combine with raw material
-        // 3. Ensure proper structure and padding
         let result = self.binfil();
         result.unwrap()
     }
