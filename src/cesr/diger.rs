@@ -13,11 +13,12 @@ pub struct Diger {
 
 impl Diger {
     pub fn new(raw: Option<&[u8]>, code: Option<&str>, soft: Option<&str>, rize: Option<usize>) -> Result<Self, MatterError> {
-        if !dig_dex::TUPLE.contains(&(code.unwrap())) {
-            return Err(MatterError::UnsupportedCodeError(String::from(code.unwrap())));
+        let code = code.unwrap_or_else(|| mtr_dex::BLAKE3_256);
+        if !dig_dex::TUPLE.contains(&(code)) {
+            return Err(MatterError::UnsupportedCodeError(String::from(code)));
         }
 
-        let base = BaseMatter::new(raw, code, soft, rize)?;
+        let base = BaseMatter::new(raw, Some(code), soft, rize)?;
         Ok(Diger {
             base,
         })
@@ -64,8 +65,9 @@ impl Diger {
         })
     }
 
-    pub fn from_ser(ser: &[u8]) -> Result<Self, MatterError> {
-        Diger::from_ser_and_code(ser, dig_dex::BLAKE3_256)
+    pub fn from_ser(ser: &[u8], code: Option<&str>) -> Result<Self, MatterError> {
+        let code = code.unwrap_or_else(|| mtr_dex::BLAKE3_256);
+        Diger::from_ser_and_code(ser, code)
     }
 
     pub fn from_ser_and_code(ser: &[u8], code: &str) -> Result<Self, MatterError> {
@@ -212,12 +214,24 @@ impl Diger {
         }
     }
 
-    fn compare_with_diger(&self, other: &Self) -> bool {
-        self.base.qb64() == other.base.qb64()
+    fn compare_with_diger(&self, ser: &[u8], other: &Self) -> bool {
+        if self.base.qb64() == other.base.qb64() {
+            return true
+        }
+
+        if self.code() == other.code() {
+            return false
+        }
+
+        other.verify(ser) && self.verify(ser)
     }
 
-    fn compare_with_qb64(&self, other: &str) -> bool {
-        self.base.qb64() == other
+    fn compare_with_qb64(&self, ser: &[u8], other: &str) -> bool {
+        self.compare_with_diger(ser, &Diger::from_qb64(other).unwrap())
+    }
+
+    fn compare_with_qb64b(&self, ser: &[u8], other: &[u8]) -> bool {
+        self.compare_with_diger(ser, &Diger::from_qb64b(Some(other)).unwrap())
     }
 }
 
@@ -231,4 +245,155 @@ impl Matter for Diger {
     fn is_digestive(&self) -> bool { self.base.is_digestive() }
     fn is_prefixive(&self) -> bool { self.base.is_prefixive() }
     fn is_special(&self) -> bool { self.base.is_special() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blake2::{Blake2b512, Blake2s256, Digest};
+    use blake3;
+    use sha2::Sha256;
+    use sha3::Sha3_256;
+    use crate::cesr::{raw_size};
+
+
+    #[test]
+    fn test_diger() {
+        // Test that the keyspace of Diger.Digests is the same as codes in DigDex
+        // (this would need to be adapted to your specific Rust implementation)
+        // assert_eq!(DigDex.keys().collect::<HashSet<_>>(), Diger::DIGESTS.keys().collect::<HashSet<_>>());
+        // Test EmptyMaterialError
+        let result = Diger::new(None, None, None, None);
+        assert!(result.is_err());
+
+
+        // Create something to digest and verify
+        let ser = b"abcdefghijklmnopqrstuvwxyz0123456789";
+
+        // Test invalid code error
+        let hash = blake3::hash(ser);
+        let dig = hash.as_bytes();
+        let result = Diger::new(Some(&dig[..]), Some(mtr_dex::ED25519), None, None);
+        assert!(result.is_err());
+
+        // Test default constructor with raw digest
+        let diger = Diger::new(Some(&dig[..]), None, None, None).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE3_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+        assert!(!diger.verify(&[ser.to_vec(), b"ABCDEF".to_vec()].concat()));
+
+        // Test with explicit code
+        let diger = Diger::new(Some(&dig[..]), Some(mtr_dex::BLAKE3_256), None, None).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE3_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+
+        // Test constructor with serialization
+        let diger = Diger::from_ser(ser, None).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE3_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+        assert_eq!(diger.qb64b(), b"ELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux");
+
+        // Test constructor with qb64b
+        let digb = b"ELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux";
+        let dig = "ELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux";
+        let diger = Diger::from_qb64b(Some(&digb[..])).unwrap();
+        assert_eq!(diger.qb64b(), digb);
+        assert_eq!(diger.qb64(), dig);
+        assert_eq!(diger.code(), mtr_dex::BLAKE3_256);
+        //
+        // Test constructor with qb64
+        let diger = Diger::from_qb64(dig).unwrap();
+        assert_eq!(diger.qb64(), dig);
+        assert_eq!(diger.qb64b(), digb);
+        assert_eq!(diger.code(), mtr_dex::BLAKE3_256);
+
+        // Test base64 encoding/decoding
+        // let pig = b"sLkveIFUPvt38xhtgYYJRCCpAGO7WjjHVR37Pawv67E=";
+        // let raw = decode_b64(str::from_utf8(pig).unwrap()).unwrap();
+        // assert_eq!(str::from_utf8(pig).unwrap(), &encode_b64(&raw));
+
+        // Test Blake2b_512
+        let mut hasher = Blake2b512::new();
+        hasher.update(ser);
+        let dig = hasher.finalize()[..].to_vec();
+        let diger = Diger::new(Some(&dig[..]), Some(mtr_dex::BLAKE2B_512), None, None).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE2B_512);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+
+        let diger = Diger::from_ser(ser, Some(mtr_dex::BLAKE2B_512)).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE2B_512);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+        //
+        // Test Blake2s_256
+        let mut hasher = Blake2s256::new();
+        hasher.update(ser);
+        let dig = hasher.finalize();
+        let diger = Diger::new(Some(&dig[..]), Some(mtr_dex::BLAKE2S_256), None, None).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE2S_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+        //
+        let diger = Diger::from_ser(ser, Some(mtr_dex::BLAKE2S_256)).unwrap();
+        assert_eq!(diger.code(), mtr_dex::BLAKE2S_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+
+        // Test SHA3_256
+        let mut hasher = Sha3_256::new();
+        hasher.update(ser);
+        let dig = hasher.finalize();
+        let diger = Diger::new(Some(&dig), Some(mtr_dex::SHA3_256), None, None).unwrap();
+        assert_eq!(diger.code(), mtr_dex::SHA3_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+
+        let diger = Diger::from_ser(ser, Some(mtr_dex::SHA3_256)).unwrap();
+        assert_eq!(diger.code(), mtr_dex::SHA3_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+
+        // Test SHA2_256
+        let mut hasher = Sha256::new();
+        hasher.update(ser);
+        let dig = hasher.finalize();
+        let diger = Diger::new(Some(&dig), Some(mtr_dex::SHA2_256), None, None).unwrap();
+        assert_eq!(diger.code(), mtr_dex::SHA2_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+
+        let diger = Diger::from_ser(ser, Some(mtr_dex::SHA2_256)).unwrap();
+        assert_eq!(diger.code(), mtr_dex::SHA2_256);
+        assert_eq!(diger.raw().len(), raw_size(diger.code()).unwrap());
+        assert!(diger.verify(ser));
+
+        // Test comparison functionality
+        let diger0 = Diger::from_ser(ser, None).unwrap(); // default code
+        let diger1 = Diger::from_ser(ser, Some(mtr_dex::SHA3_256)).unwrap();
+        let diger2 = Diger::from_ser(ser, Some(mtr_dex::BLAKE2B_512)).unwrap();
+        //
+        assert!(diger0.compare_with_diger(ser, &diger1));
+        assert!(diger0.compare_with_diger(ser, &diger2));
+        assert!(diger1.compare_with_diger(ser, &diger2));
+
+        assert!(diger0.compare_with_qb64(ser, &diger1.qb64()));
+        assert!(diger0.compare_with_qb64b(ser, &diger2.qb64b()));
+        assert!(diger1.compare_with_qb64(ser, &diger2.qb64()));
+
+        let ser1 = b"ABCDEFGHIJKLMNOPQSTUVWXYXZabcdefghijklmnopqrstuvwxyz0123456789";
+
+        // Codes match but content different
+        let diger_ser1 = Diger::from_ser(ser1, None).unwrap();
+        assert!(!diger0.compare_with_diger(ser, &diger_ser1));
+        assert!(!diger0.compare_with_qb64(ser, &diger_ser1.qb64()));
+
+        // Codes don't match and content different
+        let diger_ser1_sha3 = Diger::from_ser(ser1, Some(mtr_dex::SHA3_256)).unwrap();
+        assert!(!diger0.compare_with_diger(ser, &diger_ser1_sha3));
+        assert!(!diger0.compare_with_qb64b(ser, &diger_ser1_sha3.qb64b()));
+    }
 }
