@@ -79,6 +79,13 @@ impl Number {
         bytes.copy_from_slice(&self.base.raw()[0..16]);
         u128::from_be_bytes(bytes)
     }
+
+    pub fn numh(&self) -> String {
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&self.base.raw()[0..16]);
+        let num = u64::from_be_bytes(bytes);
+        format!("{:x}", num)
+    }
 }
 
 pub fn number_code(num: &BigUint) -> Result<&str, MatterError> {

@@ -18,6 +18,26 @@ pub struct Verfer {
 }
 
 impl Verfer {
+    /// Creates a new `Verfer` instance from a QB64-encoded string.
+    /// This method calls `BaseMatter::from_qb64` and verifies the code is supported.
+    pub fn from_qb64(qb64: &str) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb64(qb64)?;
+
+        // Validate the code is supported
+        if ![
+            mtr_dex::ED25519N,
+            mtr_dex::ED25519,
+            mtr_dex::ECDSA_256R1N,
+            mtr_dex::ECDSA_256R1,
+            mtr_dex::ECDSA_256K1N,
+            mtr_dex::ECDSA_256K1,
+        ].contains(&base.code()) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Verfer { base })
+    }
+
     pub fn new(code: Option<&[u8]>, raw: Option<&str>) -> Result<Self, MatterError> {
         let verfer = Self { base: BaseMatter::new(code, raw, None, None)? };
 

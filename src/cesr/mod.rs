@@ -6,27 +6,27 @@ use std::str;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
-mod seqner;
-mod number;
-mod dater;
-mod tagger;
-mod ilker;
-mod texter;
-mod bexter;
-mod labeler;
-mod verfer;
-mod cigar;
-mod diger;
-mod prefixer;
-mod saider;
-mod indexing;
-mod counting;
+pub mod seqner;
+pub mod number;
+pub mod dater;
+pub mod tagger;
+pub mod ilker;
+pub mod texter;
+pub mod bexter;
+pub mod labeler;
+pub mod verfer;
+pub mod cigar;
+pub mod diger;
+pub mod prefixer;
+pub mod saider;
+pub mod indexing;
+pub mod counting;
+pub mod tholder;
 
-
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Versionage {
-    major: u32,
-    minor: u32,
+    pub major: u32,
+    pub minor: u32,
 }
 pub const VERSION: Versionage = Versionage { major: 1, minor: 0 };
 #[allow(dead_code)]
@@ -1634,7 +1634,7 @@ fn encode_b64(data: &[u8]) -> String {
 }
 
 // Helper function to convert base64 string to integer
-fn b64_to_int(b64_str: &str) -> u32 {
+pub fn b64_to_int(b64_str: &str) -> u32 {
     let mut result = 0u32;
     for c in b64_str.chars() {
         result = result * 64 + match c {
@@ -1650,7 +1650,7 @@ fn b64_to_int(b64_str: &str) -> u32 {
 }
 
 // Helper function to convert integer to base64 string
-fn int_to_b64(num: u32, length: usize) -> String {
+pub fn int_to_b64(num: u32, length: usize) -> String {
     const B64_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
     let mut result = String::with_capacity(length);
