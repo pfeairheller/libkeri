@@ -345,20 +345,30 @@ pub mod bex_dex {
     /// String Base64 Only Big Leader Size 2
     pub const STR_B64_BIG_L2: &str = "9AAA";
 
+    /// Map of code to size of code (in characters) in Base64
+    pub const MAP: once_cell::sync::Lazy<std::collections::HashMap<&'static str, usize>> =
+        once_cell::sync::Lazy::new(|| {
+            let mut map = std::collections::HashMap::new();
+            map.insert(STR_B64_L0, 2);
+            map.insert(STR_B64_L1, 2);
+            map.insert(STR_B64_L2, 2);
+            map.insert(STR_B64_BIG_L0, 4);
+            map.insert(STR_B64_BIG_L1, 4);
+            map.insert(STR_B64_BIG_L2, 4);
+            map
+        });
+
+    /// Tuple of string constants in order of definition
+    pub const TUPLE: &[&str] = &[
+        STR_B64_L0,
+        STR_B64_L1,
+        STR_B64_L2,
+        STR_B64_BIG_L0,
+        STR_B64_BIG_L1,
+        STR_B64_BIG_L2,
+    ];
+
 }
-
-#[allow(dead_code)]
-pub static BEX_DEX_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-    map.insert("STR_B64_L0", bex_dex::STR_B64_L0);
-    map.insert("STR_B64_L1", bex_dex::STR_B64_L1);
-    map.insert("STR_B64_L2", bex_dex::STR_B64_L2);
-    map.insert("STR_B64_BIG_L0", bex_dex::STR_B64_BIG_L0);
-    map.insert("STR_B64_BIG_L1", bex_dex::STR_B64_BIG_L1);
-    map.insert("STR_B64_BIG_L2", bex_dex::STR_B64_BIG_L2);
-    map
-});
-
 
 /// TextCodex is codex of all variable sized byte string (Text) derivation codes.
 /// Only provides defined codes.
@@ -383,19 +393,30 @@ pub mod tex_dex {
     /// Byte String big lead size 2
     pub const BYTES_BIG_L2: &str = "9AAB";
 
-}
+    /// Map of code to size of code (in characters) in Base64
+    pub const MAP: once_cell::sync::Lazy<std::collections::HashMap<&'static str, usize>> =
+        once_cell::sync::Lazy::new(|| {
+            let mut map = std::collections::HashMap::new();
+            map.insert(BYTES_L0, 2);
+            map.insert(BYTES_L1, 2);
+            map.insert(BYTES_L2, 2);
+            map.insert(BYTES_BIG_L0, 4);
+            map.insert(BYTES_BIG_L1, 4);
+            map.insert(BYTES_BIG_L2, 4);
+            map
+        });
 
-#[allow(dead_code)]
-pub static TEX_DEX_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-    map.insert("BYTES_L0", tex_dex::BYTES_L0);
-    map.insert("BYTES_L1", tex_dex::BYTES_L1);
-    map.insert("BYTES_L2", tex_dex::BYTES_L2);
-    map.insert("BYTES_BIG_L0", tex_dex::BYTES_BIG_L0);
-    map.insert("BYTES_BIG_L1", tex_dex::BYTES_BIG_L1);
-    map.insert("BYTES_BIG_L2", tex_dex::BYTES_BIG_L2);
-    map
-});
+    /// Tuple of string constants in order of definition
+    pub const TUPLE: &[&str] = &[
+        BYTES_L0,
+        BYTES_L1,
+        BYTES_L2,
+        BYTES_BIG_L0,
+        BYTES_BIG_L1,
+        BYTES_BIG_L2,
+    ];
+
+}
 
 /// DigCodex is codex of all digest derivation codes. This is needed to ensure
 /// delegated inception using a self-addressing derivation i.e. digest derivation
@@ -846,15 +867,15 @@ pub mod pre_non_dig_dex {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Sizage {
-    hs: u32,  // header size
-    ss: u32,  // section size
-    xs: u32,  // extra size
-    fs: Option<u32>,  // field size
-    ls: u32,  // list size
+pub struct Sizage {
+    pub hs: u32,  // header size
+    pub ss: u32,  // section size
+    pub xs: u32,  // extra size
+    pub fs: Option<u32>,  // field size
+    pub ls: u32,  // list size
 }
 
-fn get_sizes() -> HashMap<&'static str, Sizage> {
+pub fn get_sizes() -> HashMap<&'static str, Sizage> {
     let mut sizes = HashMap::new();
 
     // Adding all the size entries
@@ -1045,6 +1066,7 @@ pub trait Matter {
 }
 
 /// Common implementation for all Matter types.
+#[derive(Debug, Clone)]
 pub struct BaseMatter {
     code: String,
     soft: String,

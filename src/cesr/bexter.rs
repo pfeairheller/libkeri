@@ -1,4 +1,5 @@
-use crate::cesr::BaseMatter;
+use crate::cesr::{bex_dex, BaseMatter};
+use crate::errors::MatterError;
 use crate::Matter;
 
 ///  Bexter is subclass of Matter, cryptographic material, for variable length
@@ -13,11 +14,62 @@ use crate::Matter;
 ///  is either a multiple of 3 or 4 may not round trip. Bext with a leading 'A'
 ///  whose length is a multiple of four may have the leading 'A' stripped when
 ///  round tripping.
+
+#[derive(Debug, Clone)]
 pub struct Bexter {
     base: BaseMatter,
 }
 
 impl Bexter {
+
+    /// Creates a new Number from a numeric value
+    pub fn new(raw: Option<&[u8]>, code: Option<&str>, soft: Option<&str>, rize: Option<usize>) -> Result<Self, MatterError> {
+        if !bex_dex::TUPLE.contains(&(code.unwrap())) {
+            return Err(MatterError::UnsupportedCodeError(String::from(code.unwrap_or("None"))));
+        }
+
+        let base = BaseMatter::new(raw, code, soft, rize)?;
+        Ok(Bexter {
+            base
+        })
+    }
+
+    pub fn from_qb64b(qb64b: Option<&[u8]>) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb64b(qb64b)?;
+        if !bex_dex::TUPLE.contains(&(base.code())) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Bexter {
+            base,
+        })
+    }
+
+    pub fn from_qb64(qb64: &str) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb64(qb64)?;
+        if !bex_dex::TUPLE.contains(&(base.code())) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Bexter {
+            base,
+        })
+    }
+
+    pub fn from_qb2(qb2: &[u8]) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb2(qb2)?;
+        if !bex_dex::TUPLE.contains(&(base.code())) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Bexter {
+            base,
+        })
+    }
+
+    pub fn bext(&self) -> String {
+        "".to_string()
+    }
 
 }
 

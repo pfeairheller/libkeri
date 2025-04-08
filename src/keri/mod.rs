@@ -1,10 +1,10 @@
-use std::collections::HashMap;
 use std::fmt;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use thiserror::Error;
 use crate::cesr::{int_to_b64, Versionage};
 use crate::cesr::b64_to_int;
+use crate::errors::MatterError;
 
 pub mod eventing;
 pub mod parsing;
@@ -39,7 +39,7 @@ pub const VEREX2: &[u8] = b"(?P<proto2>[A-Z]{4})(?P<major2>[0-9A-Za-z_-])(?P<min
 pub const VEREX: &[u8] = b"(?P<proto2>[A-Z]{4})(?P<major2>[0-9A-Za-z_-])(?P<minor2>[0-9A-Za-z_-]{2})(?P<kind2>[A-Z]{4})(?P<size2>[0-9A-Za-z_-]{4})\\.|(?P<proto1>[A-Z]{4})(?P<major1>[0-9a-f])(?P<minor1>[0-9a-f])(?P<kind1>[A-Z]{4})(?P<size1>[0-9a-f]{6})_";
 
 /// Maximum number of characters in full version string
-pub const MAXVERFULLSPAN: usize = VER2FULLSPAN.max(VER1FULLSPAN);
+pub const MAXVERFULLSPAN: usize = VER1FULLSPAN;
 
 /// Compiled regular expression for version detection
 pub static REVER: Lazy<Regex> = Lazy::new(|| {
@@ -64,6 +64,9 @@ pub enum ProtocolError {
 /// Errors related to version validation
 #[derive(Error, Debug)]
 pub enum KERIError {
+    #[error("Value error={0}.")]
+    ValueError(String),
+
     #[error("Incompatible vrsn={0:?} with version string.")]
     Incompatible(Versionage),
 
@@ -106,8 +109,28 @@ pub enum KERIError {
     #[error("Invalid deserialization kind: {0}")]
     InvalidKind(String),
 
+    #[error("Missing required field '{0}' for ilk '{1}'")]
+    MissingRequiredField(String, String),
+
+    #[error("Unknown ilk: {0}")]
+    UnknownIlk(String),
+
+    #[error("Wrapped matter error: {0}")]
+    MatterError(String),
 }
 
+
+impl From<MatterError> for KERIError {
+    fn from(error: MatterError) -> Self {
+        match error {
+           MatterError::InvalidCode(code) =>
+                KERIError::ValidationError(format!("Invalid Matter code: {}", code)),
+
+            // Fallback for any other errors or future-added error types
+            _ => KERIError::MatterError(format!("{:?}", error)),
+        }
+    }
+}
 /// Extracts and validates version information from a regex match
 ///
 /// # Arguments
@@ -141,7 +164,7 @@ pub fn rematch(captures: &regex::Captures) -> Result<Smellage, KERIError> {
         };
 
         if vrsn.major < 2 {
-            return Err(KERIError::VersionError(vrsn.into()));
+            return Err(KERIError::VersionError(format!("{}.{}", vrsn.major, vrsn.minor)));
         }
 
         if !Kinds::contains(kind) {
@@ -197,7 +220,7 @@ pub fn rematch(captures: &regex::Captures) -> Result<Smellage, KERIError> {
             size: size_val as usize,
         })
     } else {
-        Err(KERIError::VersionError(format!("{major}.{minor}")))
+        Err(KERIError::VersionError(format!("{:?}", full)))
     }
 }
 
@@ -233,7 +256,7 @@ pub fn versify(
     if version.major < 2 {
         // Version 1 format
         Ok(format!(
-            "{}{:x}{:x}{}{:0{}x}_"
+            "{}{:x}{:x}{}{:5$x}_",
             protocol,
             version.major,
             version.minor,
@@ -243,18 +266,14 @@ pub fn versify(
         ))
     } else {
         // Version 2+ format
-        let mut result = String::with_capacity(VER2FULLSPAN);
-        write!(
-            &mut result,
-            "{}{}{}{}{}{}",
-            protocol,
-            int_to_b64(version.major, 1),
-            int_to_b64(version.minor, 2),
-            kind,
-            int_to_b64(size as u32, 4),
-            std::str::from_utf8(VER2TERM).unwrap()
-        ).unwrap_or_else(|_| panic!("Unable to write to string"));
-        Ok(result)
+        Ok(format!("{}{}{}{}{}{}",
+           protocol,
+           int_to_b64(version.major, 1),
+           int_to_b64(version.minor, 2),
+           kind,
+           int_to_b64(size as u32, 4),
+           std::str::from_utf8(VER2TERM).unwrap()
+        ))
     }
 }
 
@@ -377,6 +396,12 @@ impl Ilks {
     }
 }
 
+
+impl std::hash::Hash for Ilk {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
+    }
+}
 /// Alternative representation of Ilks using an enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ilk {
@@ -699,19 +724,21 @@ pub enum Kinds {
     Json,
     Mgpk,
     Cbor,
+    Cesr
 }
 
 impl Kinds {
     pub fn contains(other: &str) -> bool {
-        "JSON" == other || "MGPK" == other || "CBOR" == other
+        "JSON" == other || "MGPK" == other || "CBOR" == other || "CESR" == other
     }
 
-    pub fn from(kind: &str) -> Result<Self, SerderError> {
+    pub fn from(kind: &str) -> Result<Self, KERIError> {
         match kind {
             "JSON" => Ok(Self::Json),
             "MGPK" => Ok(Self::Mgpk),
             "CBOR" => Ok(Self::Cbor),
-            _ => Err(SerderError::VersionError(format!("Invalid serialization kind: {}", kind)))
+            "CESR" => Ok(Self::Cesr),
+            _ => Err(KERIError::VersionError(format!("Invalid serialization kind: {}", kind)))
         }
     }
 }
@@ -723,6 +750,7 @@ impl fmt::Display for Kinds {
             Kinds::Json => write!(f, "JSON"),
             Kinds::Mgpk => write!(f, "MGPK"),
             Kinds::Cbor => write!(f, "CBOR"),
+            Kinds::Cesr => write!(f, "CESR"),
         }
     }
 }

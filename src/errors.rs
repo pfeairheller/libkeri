@@ -158,4 +158,14 @@ pub enum MatterError {
 
     #[error("Hash error: {0}")]
     HashError(String),
+
+    #[error("Invalid threshold: {0}")]
+    InvalidThreshold(String),
+
+    #[error("Weight value error: {0}")]
+    WeightError(String),
+
+    #[error("Parse error: {0}")]
+    ParseError(String),
+
 }

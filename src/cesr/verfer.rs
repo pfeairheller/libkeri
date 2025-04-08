@@ -349,9 +349,10 @@ mod tests {
         let mut hasher = Sha256::new();
         hasher.update(ser);
         let digest = hasher.finalize();
+        let digest: [u8; 32] = digest.into();
 
         // Sign the message hash with the secret key
-        let message = Message::from_slice(&digest).unwrap();
+        let message = Message::from_digest(digest);
         let signature = secp.sign_ecdsa(&message, &secret_key);
 
         // Get DER format for signature (for testing DER rejection)
@@ -385,8 +386,9 @@ mod tests {
         let mut hasher = Sha256::new();
         hasher.update(ser);
         let digest = hasher.finalize();
+        let digest: [u8; 32] = digest.into();
 
-        let message = Message::from_slice(&digest).unwrap();
+        let message = Message::from_digest(digest);
         let signature = secp.sign_ecdsa(&message, &secret_key);
 
         // Get DER format for signature (for testing DER rejection)
