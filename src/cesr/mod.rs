@@ -36,6 +36,13 @@ pub const VRSN_2_0: Versionage = Versionage { major: 2, minor: 0 };
 
 pub const PAD: &str = "_";
 
+
+impl std::fmt::Display for Versionage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
 /// Maps Base64 index to corresponding character
 pub static B64_CHR_BY_IDX: Lazy<HashMap<u8, char>> = Lazy::new(|| {
     let mut map = HashMap::new();

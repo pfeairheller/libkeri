@@ -22,7 +22,7 @@ impl Number {
         }
 
         let mut zeroed_buffer = vec![0u8; rs];
-        let mut bytes = zeroed_buffer.as_mut_slice();
+        let bytes = zeroed_buffer.as_mut_slice();
         let start = rs - raw.len();
         bytes[start..].copy_from_slice(raw.as_slice());
 

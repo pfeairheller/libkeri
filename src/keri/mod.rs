@@ -43,7 +43,7 @@ pub const MAXVERFULLSPAN: usize = VER1FULLSPAN;
 
 /// Compiled regular expression for version detection
 pub static REVER: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(std::str::from_utf8(VEREX).expect("Invalid regex pattern"))
+    Regex::new(std::str::from_utf8(VEREX1).expect("Invalid regex pattern"))
         .expect("Failed to compile regex pattern")
 });
 
@@ -193,13 +193,13 @@ pub fn rematch(captures: &regex::Captures) -> Result<Smellage, KERIError> {
         }
 
         let vrsn = Versionage {
-            major: b64_to_int(major),
-            minor: b64_to_int(minor),
+            major: u32::from_str_radix(major, 16).expect("Failed to parse hex"),
+            minor: u32::from_str_radix(minor, 16).expect("Failed to parse hex"),
         };
 
         let gvrsn = Versionage {
-            major: b64_to_int(major),
-            minor: b64_to_int(minor),
+            major: u32::from_str_radix(major, 16).expect("Failed to parse hex"),
+            minor: u32::from_str_radix(minor, 16).expect("Failed to parse hex"),
         };
 
         if vrsn.major > 1 {
@@ -210,7 +210,7 @@ pub fn rematch(captures: &regex::Captures) -> Result<Smellage, KERIError> {
             return Err(KERIError::KindError(kind.to_string()));
         }
 
-        let size_val = b64_to_int(size);
+        let size_val = u32::from_str_radix(size, 16).expect("Failed to parse hex");
 
         Ok(Smellage {
             proto: proto.to_string(),
@@ -256,13 +256,13 @@ pub fn versify(
     if version.major < 2 {
         // Version 1 format
         Ok(format!(
-            "{}{:x}{:x}{}{:5$x}_",
+            "{}{:x}{:x}{}{:0width$x}_",
             protocol,
             version.major,
             version.minor,
             kind,
             size,
-            VERRAWSIZE
+            width=VERRAWSIZE
         ))
     } else {
         // Version 2+ format
