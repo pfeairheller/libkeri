@@ -5,7 +5,7 @@ use crate::cesr::tholder::Tholder;
 use crate::cesr::verfer::Verfer;
 use crate::cesr::{dig_dex, get_sizes, mtr_dex, BaseMatter, Versionage, VRSN_1_0};
 use crate::{keri, Matter};
-use crate::keri::{deversify, smell, versify, Ilk, KERIError, Kinds, Said, Smellage};
+use crate::keri::{deversify, smell, versify, Ilk, KERIError, Kinds, Protocolage, Said, Smellage};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use keri::Ilks;
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
 use std::collections::HashMap;
 use tracing::error;
-use crate::errors::MatterError;
+use std::any::Any;
 
 /// Create a validation schema for the different event types
 pub fn build_validation_schema() -> HashMap<Ilk, Vec<&'static str>> {
@@ -684,6 +684,7 @@ impl FieldValidator for Sadder {
 
 
 /// Base implementation of the Serder trait for serializable/deserializable entities
+#[derive(Debug, Clone)]
 pub struct BaseSerder {
     /// Serialized message as bytes
     raw: Vec<u8>,
@@ -1001,7 +1002,8 @@ impl BaseSerder {
                 // Convert bytes to UTF-8 string for JSON
                 match std::str::from_utf8(data) {
                     Ok(text) => {
-                        let sadder: Sadder = serde_json::from_str(text).unwrap();
+                        let sadder = serde_json::from_str(text)
+                            .map_err(|e| KERIError::JsonError(e.to_string()))?;
                         Ok(sadder)
                     }
                     Err(e) => Err(KERIError::JsonError(format!(
@@ -1257,7 +1259,7 @@ impl BaseSerder {
 }
 
 /// Trait representing a serializable/deserializable entity with SAID (Self-Addressing IDentifier)
-pub trait Serder {
+pub trait Serder: Any + Send + Sync {
     /// Returns a pretty-printed JSON representation of the serialized data
     ///
     /// # Parameters
@@ -1310,6 +1312,9 @@ pub trait Serder {
 
     /// Returns the packet type given by sad['t'] if any
     fn ilk(&self) -> Option<&str>;
+
+    fn as_any(&self) -> &dyn Any;
+
 }
 
 impl Serder for BaseSerder {
@@ -1365,6 +1370,10 @@ impl Serder for BaseSerder {
     fn ilk(&self) -> Option<&str> {
         Some(self.sad.t.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 // Define a trait for verification behavior
@@ -1410,6 +1419,7 @@ impl Verifiable for BaseSerder {
 
 
 /// KERI-specific implementation of the Serder
+#[derive(Debug, Clone)]
 pub struct SerderKERI {
     base: BaseSerder,
 }
@@ -1427,6 +1437,7 @@ impl Serder for SerderKERI {
     fn size(&self) -> usize { self.base.size() }
     fn said(&self) -> Option<&str> { self.base.said() }
     fn ilk(&self) -> Option<&str> { self.base.ilk() }
+    fn as_any(&self) -> &dyn Any { self }
 }
 
 impl SerderKERI {
@@ -1705,6 +1716,7 @@ fn parse_version(version_str: &str) -> Result<Versionage, String> {
 }
 
 /// SerderACDC struct that extends BaseSerder
+#[derive(Debug, Clone)]
 pub struct SerderACDC {
     /// Base Serder fields and behavior
     pub base: BaseSerder,
@@ -1723,6 +1735,7 @@ impl Serder for SerderACDC {
     fn size(&self) -> usize { self.base.size() }
     fn said(&self) -> Option<&str> { self.base.said() }
     fn ilk(&self) -> Option<&str> { self.base.ilk() }
+    fn as_any(&self) -> &dyn Any { self }
 }
 
 
@@ -1900,6 +1913,65 @@ impl SerderACDC {
     }
 }
 
+/// Serder factory for generating serder instances by protocol type
+pub struct Serdery;
+
+impl Serdery {
+    /// Create a new Serdery instance
+    pub fn new() -> Self {
+        Serdery
+    }
+
+    /// Extract and return Serder implementation based on protocol type detected in message
+    ///
+    /// # Arguments
+    /// * `ims` - Serialized incoming message stream. Assumes start of stream is raw Serder.
+    /// * `genus` - CESR genus code from stream parser.
+    /// * `gvrsn` - Instance CESR genus code table version (Major, Minor)
+    /// * `native` - True means may be CESR native message so snuff instead of smell.
+    ///             False means not CESR native i.e JSON, CBOR, MGPK field map, so use smell.
+    /// * `skip` - Bytes to skip at front of ims. Useful for CESR native serialization.
+    ///
+    /// # Returns
+    /// Box<dyn Serder> - Instance of appropriate Serder implementation
+    pub fn reap(
+        &self,
+        ims: &[u8],
+        genus: &str,
+        gvrsn: &Versionage,
+        native: Option<bool>,
+        skip: Option<usize>
+    ) -> Result<Box<dyn Serder>, KERIError> {
+        let native = native.unwrap_or(false);
+        let skip = skip.unwrap_or(0);
+
+        let smellage = if native {
+            // Handle CESR native case, skipping bytes if necessary
+            if skip > 0 && skip < ims.len() {
+                smell(&ims[skip..])
+            } else {
+                smell(ims)
+            }
+        } else {
+            smell(ims)
+        }?;
+
+        let protos = Protocolage::default();
+        if smellage.proto == protos.keri {
+            // Create SerderKERI instance
+            let serder = SerderKERI::from_raw(ims, Some(smellage))?;
+            Ok(Box::new(serder))
+        } else if smellage.proto == protos.acdc {
+            // Create SerderACDC instance
+            let serder = SerderACDC::from_raw(ims, Some(smellage))?;
+            Ok(Box::new(serder))
+        } else {
+            Err(KERIError::ProtocolError(format!("Unsupported protocol type = {}", smellage.proto)))
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use crate::cesr::VRSN_1_0;
@@ -1990,7 +2062,6 @@ mod tests {
         let raw_clone = serder.raw().clone();
         let said = serder.said().clone();
         let size = serder.size();
-        let ilk = serder.ilk();
 
         // Test reconstruction from SAD
         let serder_from_sad = SerderKERI::from_sad(&sad_clone).unwrap();

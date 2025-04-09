@@ -8,6 +8,7 @@ use crate::Matter;
 ///  Adds .verfer property to hold Verfer instance of associated verifier public key
 ///  Verfer's .raw as verifier key and .code is verifier cipher suite.
 
+#[derive(Debug, Clone)]
 pub struct Cigar {
     base: BaseMatter,
     verfer: Option<Verfer>,

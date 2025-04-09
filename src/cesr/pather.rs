@@ -1,17 +1,18 @@
 use crate::cesr::BaseMatter;
 use crate::Matter;
 
-///  Prefixer is Matter subclass for autonomic identifier AID prefix
+///  Saider is Matter subclass for self-addressing identifier prefix using
+///  derivation as determined by code from ked
 #[derive(Debug, Clone)]
-pub struct Prefixer {
+pub struct Pather {
     base: BaseMatter,
 }
 
-impl Prefixer {
+impl Pather {
 
 }
 
-impl Matter for Prefixer {
+impl Matter for Pather {
     fn code(&self) -> &str { self.base.code() }
     fn raw(&self) -> &[u8] { self.base.raw() }
     fn qb64(&self) -> String { self.base.qb64() }

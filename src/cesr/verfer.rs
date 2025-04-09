@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 
 ///  Verfer is Matter subclass with method to verify signature of serialization
 ///  using the .raw as verifier key and .code for signature cipher suite.
+#[derive(Debug, Clone)]
 pub struct Verfer {
     base: BaseMatter,
 }

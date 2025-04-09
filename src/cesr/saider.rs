@@ -3,6 +3,7 @@ use crate::Matter;
 
 ///  Saider is Matter subclass for self-addressing identifier prefix using
 ///  derivation as determined by code from ked
+#[derive(Debug, Clone)]
 pub struct Saider {
     base: BaseMatter,
 }

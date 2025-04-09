@@ -3,6 +3,7 @@ use crate::errors::MatterError;
 use crate::Matter;
 
 /// Dater represents RFC-3339 formatted datetimes
+#[derive(Debug, Clone)]
 pub struct Dater {
     base: BaseMatter,
 }

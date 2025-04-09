@@ -3,6 +3,7 @@ use crate::errors::MatterError;
 use crate::Matter;
 
 /// Seqner represents sequence numbers or first-seen numbers
+#[derive(Debug, Clone)]
 pub struct Seqner {
     base: BaseMatter,
 }

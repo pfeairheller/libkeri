@@ -1,10 +1,12 @@
-mod siger;
+pub mod siger;
 
 use std::collections::HashMap;
 use crate::cesr::{b64_to_int, code_b2_to_b64, code_b64_to_b2, decode_b64, encode_b64, int_to_b64, nab_sextets};
 use crate::errors::MatterError;
 use std::str;
 use num_bigint::BigUint;
+
+
 
 #[allow(dead_code)]
 pub mod idr_dex {
@@ -355,6 +357,7 @@ pub trait Indexer {
     fn ondex(&self) -> u32;
 }
 
+#[derive(Debug, Clone)]
 pub struct BaseIndexer {
     code: String,
     raw: Vec<u8>,

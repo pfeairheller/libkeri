@@ -2,7 +2,7 @@ use crate::errors::MatterError;
 use std::collections::HashMap;
 use base64::{Engine, engine::general_purpose};
 use once_cell::sync::Lazy;
-use std::str;
+use std::{fmt, str};
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
@@ -22,6 +22,7 @@ pub mod saider;
 pub mod indexing;
 pub mod counting;
 pub mod tholder;
+pub mod pather;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Versionage {
@@ -37,8 +38,8 @@ pub const VRSN_2_0: Versionage = Versionage { major: 2, minor: 0 };
 pub const PAD: &str = "_";
 
 
-impl std::fmt::Display for Versionage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Versionage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.{}", self.major, self.minor)
     }
 }
@@ -81,6 +82,139 @@ pub static B64_IDX_BY_CHR: Lazy<HashMap<char, u8>> = Lazy::new(|| {
 
     map
 });
+
+#[allow(dead_code)]
+pub mod cold_dex {
+    use std::collections::HashMap;
+    use once_cell::sync::Lazy;
+
+    // Constants for code type values
+    pub const ANB64: u8 = 0o0;      // Annotated CESR B64
+    pub const CTB64: u8 = 0o1;      // CountCode Base64
+    pub const OPB64: u8 = 0o2;      // OpCode Base64
+    pub const JSON: u8 = 0o3;       // JSON Map Event Start
+    pub const MGPK1: u8 = 0o4;      // MGPK Fixed Map Event Start
+    pub const CBOR: u8 = 0o5;       // CBOR Map Event Start
+    pub const MGPK2: u8 = 0o6;      // MGPK Big 16 or 32 Map Event Start
+    pub const CTOPB2: u8 = 0o7;     // CountCode or OpCode Base2
+
+    // Map of code types by value
+    pub static MAP: Lazy<HashMap<&'static str, u8>> = Lazy::new(|| {
+        let mut map = HashMap::new();
+        map.insert("ANB64", ANB64);
+        map.insert("CTB64", CTB64);
+        map.insert("OPB64", OPB64);
+        map.insert("JSON,", JSON);
+        map.insert("MGPK1", MGPK1);
+        map.insert("CBOR,", CBOR);
+        map.insert("MGPK2", MGPK2);
+        map.insert("CTOPB2", CTOPB2);
+        map
+    });
+
+    // Tuple of code values only
+    pub static TUPLE: Lazy<Vec<u8>> = Lazy::new(|| {
+        vec![
+            ANB64,
+            CTB64,
+            OPB64,
+            JSON,
+            MGPK1,
+            CBOR,
+            MGPK2,
+            CTOPB2,
+        ]
+    });
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Coldage {
+    pub msg: &'static str,
+    pub txt: &'static str,
+    pub bny: &'static str,
+    pub ano: &'static str,
+}
+
+impl Coldage {
+    pub fn new(msg: &'static str, txt: &'static str, bny: &'static str, ano: &'static str) -> Self {
+        Self { msg, txt, bny, ano }
+    }
+}
+
+impl Default for Coldage {
+    fn default() -> Self {
+        Self {
+            msg: "msg",
+            txt: "txt",
+            bny: "bny",
+            ano: "ano",
+        }
+    }
+}
+
+impl fmt::Display for Coldage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Coldage(msg='{}', txt='{}', bny='{}', ano='{}')",
+            self.msg, self.txt, self.bny, self.ano
+        )
+    }
+}
+
+// Define a constant similar to Colds in Python
+pub const COLDS: Coldage = Coldage {
+    msg: "msg",
+    txt: "txt",
+    bny: "bny",
+    ano: "ano",
+};
+
+/// Returns status string of cold start of stream ims bytearray by looking
+/// at first triplet of first byte to determine if message or counter code
+/// and if counter code whether Base64 or Base2 representation
+///
+/// First three bits:
+/// 0o0 = 000 annotated cesr
+/// 0o1 = 001 cntcode B64
+/// 0o2 = 010 opcode B64
+/// 0o3 = 011 json
+/// 0o4 = 100 mgpk
+/// 0o5 = 101 cbor
+/// 0o6 = 110 mgpk
+/// 0o7 = 111 cntcode B2 or opcode B2
+///
+/// counter B64 in (0o1, 0o2) return 'txt'
+/// counter B2 in (0o7)  return 'bny'
+/// event in (0o3, 0o4, 0o5, 0o6)  return 'msg'
+/// annotated in (0o0)  return 'ano'
+pub fn sniff(ims: &[u8]) -> Result<&'static str, MatterError> {
+    if ims.is_empty() {
+        return Err(MatterError::ShortageError("Need more bytes.".to_string()));
+    }
+
+    // Extract the first 3 bits (tritet) by shifting right 5 bits
+    let tritet = ims[0] >> 5;
+
+    if tritet == cold_dex::JSON || tritet == cold_dex::MGPK1 ||
+        tritet == cold_dex::CBOR || tritet == cold_dex::MGPK2 {
+        return Ok(COLDS.msg);
+    }
+
+    if tritet == cold_dex::CTB64 || tritet == cold_dex::OPB64 {
+        return Ok(COLDS.txt);
+    }
+
+    if tritet == cold_dex::CTOPB2 {
+        return Ok(COLDS.bny);
+    }
+
+    if tritet == cold_dex::ANB64 {
+        return Ok(COLDS.ano);
+    }
+
+    Err(MatterError::ColdStartError(format!("Unexpected tritet={} at stream start.", tritet)))
+}
 
 /// Various derivation codes for Matter types
 #[allow(dead_code)]

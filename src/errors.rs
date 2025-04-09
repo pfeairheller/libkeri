@@ -168,4 +168,6 @@ pub enum MatterError {
     #[error("Parse error: {0}")]
     ParseError(String),
 
+    #[error("Cold start error: {0}")]
+    ColdStartError(String),
 }

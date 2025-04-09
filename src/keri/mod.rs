@@ -117,6 +117,18 @@ pub enum KERIError {
 
     #[error("Wrapped matter error: {0}")]
     MatterError(String),
+
+    #[error("IO Error")]
+    Io(#[from] std::io::Error),
+
+    #[error("Parsing Error: {0}")]
+    Parsing(String),
+
+    #[error("Unsupported Message Version")]
+    UnsupportedMessage,
+
+    #[error("Invalid CESR Data")]
+    InvalidCesrData,
 }
 
 

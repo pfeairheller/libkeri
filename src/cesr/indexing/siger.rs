@@ -7,6 +7,7 @@ use crate::errors::MatterError;
 ///  Adds .verfer property to hold Verfer instance of associated verifier public key
 ///  Verfer's .raw as verifier key and .code is verifier cipher suite.
 
+#[derive(Debug, Clone)]
 pub struct Siger {
     base: BaseIndexer,
     verfer: Option<Verfer>,
