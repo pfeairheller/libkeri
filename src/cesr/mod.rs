@@ -1193,6 +1193,15 @@ pub trait Matter {
     /// Returns binary fully qualified representation
     fn qb2(&self) -> Vec<u8>;
 
+    /// Soft portion of qb64 value
+    fn soft(&self) -> &str;
+
+    /// Return the full size of this Matter instance
+    fn full_size(&self) -> usize;
+
+    /// Calculate the populated size
+    fn size(&self) -> usize;
+
     /// Returns whether the derivation code is transferable
     fn is_transferable(&self) -> bool;
 
@@ -1204,6 +1213,12 @@ pub trait Matter {
 
     /// Returns whether the code represents a prefix
     fn is_special(&self) -> bool;
+}
+
+/// Trait that must be implemented by types that can be parsed
+pub trait Parsable: Sized {
+    fn from_qb64b(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError>;
+    fn from_qb2(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError>;
 }
 
 /// Common implementation for all Matter types.
@@ -1345,11 +1360,6 @@ impl BaseMatter {
         BaseMatter::new(raw, Some(mtr_dex::ED25519N), None, None)
     }
 
-    pub fn from_qb64b(qb64b: Option<&[u8]>) -> Result<Self, MatterError> {
-        let qb64 = qb64b.and_then(|b| str::from_utf8(b).ok());
-        BaseMatter::from_qb64(qb64.unwrap_or(""))
-    }
-
     /// Creates a new BaseMatter from a qb64 string
     pub fn from_qb64(qb64: &str) -> Result<Self, MatterError> {
         if qb64.is_empty() {
@@ -1448,10 +1458,6 @@ impl BaseMatter {
             soft: soft.to_string(),
             raw,
         })
-    }
-    /// Creates a new BaseMatter from qb2 bytes
-    pub fn from_qb2(qb2: &[u8]) -> Result<Self, MatterError> {
-        BaseMatter::bexfil(qb2)
     }
 
     pub fn bexfil(qb2: &[u8]) -> Result<Self, MatterError> {
@@ -1786,6 +1792,32 @@ impl BaseMatter {
     }
 }
 
+impl Parsable for BaseMatter {
+
+    fn from_qb64b(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let qb64b = data.as_slice();
+        let qb64 = str::from_utf8(qb64b).ok();
+        let mtr = BaseMatter::from_qb64(qb64.unwrap_or(""))?;
+        if strip.unwrap_or(false) {
+            let fs = mtr.full_size();
+            data.drain(..fs);
+        }
+        Ok(mtr)
+    }
+
+    /// Creates a new BaseMatter from qb2 bytes
+    fn from_qb2(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let qb2 = data.as_slice();
+        let mtr = BaseMatter::bexfil(qb2)?;
+        if strip.unwrap_or(false) {
+            let fs = mtr.full_size();
+            data.drain(..fs);
+        }
+        Ok(mtr)
+    }
+
+}
+
 
 // Helper function to decode base64 string to bytes
 fn decode_b64(data: &str) -> Result<Vec<u8>, MatterError> {
@@ -1971,6 +2003,43 @@ impl Matter for BaseMatter {
         result.unwrap()
     }
 
+    fn soft(&self) -> &str {
+        &self.soft
+    }
+
+    /// Returns full size of matter in bytes
+    ///
+    /// Fixed size codes returns fs from .Sizes
+    /// Variable size codes where fs==None computes fs from .size and sizes
+    ///
+    /// # Returns
+    /// * `usize` - Full size in bytes
+    fn full_size(&self) -> usize {
+        // Extract sizes from the Sizes map using the code
+        let sizes = get_sizes();
+        let size = sizes[self.code.as_str()];
+        let (hs, ss, fs,) = (size.hs, size.ss, size.fs);
+
+        // If fs is None, compute the full size
+        match fs {
+            Some(fixed_size) => fixed_size as usize,
+            None => {
+                // Compute fs from ss characters in code and self.size
+                (hs + ss) as usize + (self.size()  * 4)
+            }
+        }
+    }
+
+    fn size(&self) -> usize {
+        let soft = self.soft();
+        if soft.len() == 0 {
+            0
+        } else {
+            b64_to_int(self.soft()) as usize
+        }
+    }
+
+
     fn is_transferable(&self) -> bool {
         !non_trans_dex::TUPLE.contains(&(self.code.as_str()))
     }
@@ -2047,7 +2116,7 @@ mod tests {
         assert_eq!(matter1.qb64(), "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj");
         assert_eq!(matter1.qb2(), prebin.to_vec());
 
-        let matter2 = BaseMatter::from_qb2(prebin.as_slice()).unwrap();
+        let matter2 = BaseMatter::from_qb2(&mut prebin.to_vec(), None).unwrap();
         assert_eq!(matter2.raw(), raw);
         assert_eq!(matter2.code(), "B");
         assert_eq!(matter2.qb64(), "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj");
@@ -2126,7 +2195,7 @@ mod tests {
 
         // Test qb2 generation and conversion
         let qb2 = matter.qb2();
-        let matter3 = BaseMatter::from_qb2(qb2.as_slice()).unwrap();
+        let matter3 = BaseMatter::from_qb2(&mut qb2.to_vec(), None).unwrap();
         assert_eq!(matter3.code(), mtr_dex::ED25519N);
         assert_eq!(matter3.raw(), verkey);
         assert_eq!(matter3.qb64(), qb64);
@@ -2176,15 +2245,15 @@ mod tests {
     #[test]
     fn test_matter_from_qb64b() {
         let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
-        let prefixb = prefix.as_bytes();
-        let matter = BaseMatter::from_qb64b(Some(prefixb)).unwrap();
+        let mut prefixb = prefix.as_bytes().to_vec();
+        let matter = BaseMatter::from_qb64b(&mut prefixb, None).unwrap();
         assert_eq!(matter.code(), mtr_dex::ED25519N);
         assert_eq!(matter.qb64(), prefix);
 
         // Test with full identifier
         let both = format!("{}:mystuff/mypath/toresource?query=what#fragment", prefix);
-        let bothb = both.as_bytes();
-        let matter = BaseMatter::from_qb64b(Some(bothb)).unwrap();
+        let mut bothb = both.as_bytes().to_vec();
+        let matter = BaseMatter::from_qb64b(&mut bothb, None).unwrap();
         assert_eq!(matter.code(), mtr_dex::ED25519N);
         assert_eq!(matter.qb64(), prefix);
         assert!(!matter.is_transferable());
@@ -2196,9 +2265,9 @@ mod tests {
     fn test_matter_from_qb2() {
         let prefix = "BGlOiUdp5sMmfotHfCWQKEzWR91C72AH0lT84c0um-Qj";
         let matter = BaseMatter::from_qb64(prefix).unwrap();
-        let qb2 = matter.qb2();
+        let mut qb2 = matter.qb2();
 
-        let matter2 = BaseMatter::from_qb2(&qb2).unwrap();
+        let matter2 = BaseMatter::from_qb2(&mut qb2, None).unwrap();
         assert_eq!(matter2.code(), mtr_dex::ED25519N);
         assert_eq!(matter2.qb64(), prefix);
         assert!(!matter2.is_transferable());

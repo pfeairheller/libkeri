@@ -1,12 +1,10 @@
 pub mod siger;
 
 use std::collections::HashMap;
-use crate::cesr::{b64_to_int, code_b2_to_b64, code_b64_to_b2, decode_b64, encode_b64, int_to_b64, nab_sextets};
+use crate::cesr::{b64_to_int, code_b2_to_b64, code_b64_to_b2, decode_b64, encode_b64, int_to_b64, nab_sextets, Parsable};
 use crate::errors::MatterError;
 use std::str;
 use num_bigint::BigUint;
-
-
 
 #[allow(dead_code)]
 pub mod idr_dex {
@@ -352,6 +350,9 @@ pub trait Indexer {
     /// Returns binary fully qualified representation
     fn qb2(&self) -> Vec<u8>;
 
+    /// Full Size
+    fn full_size(&self) -> u32;
+
     fn index(&self) -> u32;
 
     fn ondex(&self) -> u32;
@@ -513,11 +514,6 @@ impl BaseIndexer {
 
     pub fn from_raw(raw: Option<&[u8]>) -> Result<Self, MatterError> {
         BaseIndexer::new(raw, Some(idr_dex::ED25519_SIG), Some(0), None)
-    }
-
-    pub fn from_qb64b(qb64b: Option<&[u8]>) -> Result<Self, MatterError> {
-        let qb64 = qb64b.and_then(|b| str::from_utf8(b).ok());
-        BaseIndexer::from_qb64(qb64.unwrap_or(""))
     }
 
     /// Extracts code, index, and raw from qualified base64 bytes (qb64b)
@@ -713,11 +709,6 @@ impl BaseIndexer {
             ondex: ondex.unwrap(),
             raw,
         })
-    }
-
-    /// Creates a new BaseMatter from qb2 bytes
-    pub fn from_qb2(qb2: &[u8]) -> Result<Self, MatterError> {
-        BaseIndexer::bexfil(qb2)
     }
 
     pub fn bexfil(qb2: &[u8]) -> Result<Self, MatterError> {
@@ -1088,6 +1079,31 @@ impl BaseIndexer {
     }
 }
 
+impl Parsable for BaseIndexer {
+    fn from_qb64b(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let qb64b = data.as_slice();
+        let qb64 = str::from_utf8(qb64b).ok();
+        let idx = BaseIndexer::from_qb64(qb64.unwrap_or(""))?;
+        if strip.unwrap_or(false) {
+            let fs = idx.full_size();
+            data.drain(..fs as usize);
+        }
+        Ok(idx)
+    }
+
+    /// Creates a new BaseMatter from qb2 bytes
+    fn from_qb2(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let qb2 = data.as_slice();
+        let idx = BaseIndexer::bexfil(qb2)?;
+        if strip.unwrap_or(false) {
+            let fs = idx.full_size();
+            data.drain(..fs as usize);
+        }
+        Ok(idx)
+    }
+}
+
+
 fn sceil(a: usize, b: usize) -> usize {
     (a + b - 1) / b
 }
@@ -1138,6 +1154,12 @@ impl Indexer for BaseIndexer {
     fn qb2(&self) -> Vec<u8> {
         let result = self.binfil();
         result.unwrap()
+    }
+
+    fn full_size(&self) -> u32 {
+        let sizes = get_sizes();
+        let size = sizes[self.code.as_str()];
+        size.fs.or_else(|| Some(0)).unwrap()
     }
 
     fn index(&self) -> u32 {
@@ -1193,7 +1215,7 @@ mod tests {
 
         let qsig64b = qsig64.as_bytes();
         // Create expected decoded bytes for verification
-        let qsig2b = decode_b64(&qsig64).unwrap();
+        let mut qsig2b = decode_b64(&qsig64).unwrap();
         assert_eq!(qsig2b.len(), 66);
 
         // Expected raw bytes after decoding
@@ -1221,7 +1243,7 @@ mod tests {
         let qb2 = indexer.qb2();
         assert_eq!(&qb2, &qsig2b);
 
-        let indexer1 = BaseIndexer::from_qb2(&qsig2b).expect("Failed to create BaseIndexer from qb2");
+        let indexer1 = BaseIndexer::from_qb2(&mut qsig2b, None).expect("Failed to create BaseIndexer from qb2");
         assert_eq!(indexer1.raw(), &expected_raw);
         assert_eq!(indexer1.code(), idr_dex::ED25519_SIG);
         assert_eq!(indexer1.index(), 0);
@@ -1262,7 +1284,7 @@ mod tests {
         assert_eq!(qb2, qsig2b);
 
         // Test _exfil method (similar to the Python version)
-        let indexer = BaseIndexer::from_qb64b(Some(qsig64b)).expect("Failed to create BaseIndexer from qb64b");
+        let indexer = BaseIndexer::from_qb64b(&mut qsig64b.to_vec(), None).expect("Failed to create BaseIndexer from qb64b");
         assert_eq!(indexer.code, idr_dex::ED25519_SIG);
         assert_eq!(indexer.raw, sig);
         assert_eq!(indexer.qb64b(), qsig64b);
@@ -1290,6 +1312,10 @@ mod tests {
         assert_eq!(qb64b, qsig64b);
         assert_eq!(qb2, qsig2b);
 
+        let qb64 = "AAApXLez5eVIs6YyRXOMDMBy4cTm2GvsilrZlcMmtBbO5twLst_jjFoEyfKTWKntEtv9JPBv1DLkqg-ImDmGPM8E";
+        let indexer = BaseIndexer::from_qb64(qb64).expect("Failed to create BaseIndexer from qb64b");
+        assert_eq!(indexer.code, idr_dex::ED25519_SIG);
+        assert_eq!(indexer.index, 0);
 
     }
 }

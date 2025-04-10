@@ -1,11 +1,10 @@
-use crate::cesr::{code_b2_to_b64, int_to_b64, nab_sextets, Versionage, VERSION};
+use crate::cesr::{code_b2_to_b64, int_to_b64, nab_sextets, Parsable, Versionage, VERSION};
 use crate::errors::MatterError;
 use once_cell::sync::Lazy;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::str;
-
 
 /// GenusCodex is codex of protocol genera for code table.
 ///
@@ -347,9 +346,9 @@ pub mod seal_dex_2_0 {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Cizage {
-    hs: u32,  // header size
-    ss: u32,  // section size
-    fs: u32,  // field size
+    pub hs: u32,  // header size
+    pub ss: u32,  // section size
+    pub fs: u32,  // field size
 }
 
 /// Returns a HashMap mapping CESR counter codes to their size specifications
@@ -714,11 +713,6 @@ impl BaseCounter {
         })
     }
 
-    pub fn from_qb64b(qb64b: Option<&[u8]>) -> Result<Self, MatterError> {
-        let qb64 = qb64b.and_then(|b| str::from_utf8(b).ok());
-        BaseCounter::from_qb64(qb64.unwrap_or(""))
-    }
-
     pub fn from_qb64(qb64: &str) -> Result<Self, MatterError> {
         if qb64.is_empty() {
             return Err(MatterError::ShortageError("Empty material, Need more characters.".to_string()));
@@ -785,10 +779,6 @@ impl BaseCounter {
             version: VERSION,
         })
 
-    }
-
-    pub fn from_qb2(qb2: &[u8]) -> Result<Self, MatterError> {
-        BaseCounter::bexfil(qb2)
     }
 
     fn bexfil(qb2: &[u8]) -> Result<Self, MatterError> {
@@ -953,6 +943,30 @@ impl BaseCounter {
     }
 }
 
+impl Parsable for BaseCounter {
+    fn from_qb64b(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let qb64b = data.as_slice();
+        let qb64 = str::from_utf8(qb64b).ok();
+        let idx = BaseCounter::from_qb64(qb64.unwrap_or(""))?;
+        if strip.unwrap_or(false) {
+            let fs = idx.full_size();
+            data.drain(..fs as usize);
+        }
+        Ok(idx)
+    }
+
+    /// Creates a new BaseMatter from qb2 bytes
+    fn from_qb2(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let qb2 = data.as_slice();
+        let idx = BaseCounter::bexfil(qb2)?;
+        if strip.unwrap_or(false) {
+            let fs = idx.full_size();
+            data.drain(..fs as usize);
+        }
+        Ok(idx)
+    }
+}
+
 impl Counter for BaseCounter {
     fn code(&self) -> &str {
         &self.code
@@ -1045,8 +1059,8 @@ mod tests {
         let code = ctr_dex_1_0::CONTROLLER_IDX_SIGS.to_string();
         let qsc = format!("{}{}", code, int_to_b64(count as u32, 2));
         assert_eq!(qsc, "-AAB");
-        let qscb = qsc.as_bytes().to_vec();
-        let qscb2 = decode_b64(&qsc)?;
+        let mut qscb = qsc.as_bytes().to_vec();
+        let mut qscb2 = decode_b64(&qsc)?;
 
         // Test with code and count
         let counter = BaseCounter::from_code_and_count(
@@ -1115,7 +1129,7 @@ mod tests {
 
         // Test with qb64 bytes
         let counter = BaseCounter::from_qb64b(
-            Some(qscb.as_slice()),
+            &mut qscb, None
         )?;
         assert_eq!(counter.code, ctr_dex_1_0::CONTROLLER_IDX_SIGS);
         assert_eq!(counter.name(), "-A");
@@ -1141,7 +1155,7 @@ mod tests {
 
         // Test with qb2
         let counter = BaseCounter::from_qb2(
-            qscb2.as_slice(),
+            &mut qscb2, None
         ).expect("Failed to decode qb2");
         assert_eq!(counter.code, ctr_dex_1_0::CONTROLLER_IDX_SIGS);
         assert_eq!(counter.name(), "-A");
@@ -1171,15 +1185,15 @@ mod tests {
         let mut long_qscb2 = qscb2.clone();
         long_qscb2.extend_from_slice(&[1, 2, 3, 4, 5]);
         let counter = BaseCounter::from_qb2(
-            long_qscb2.as_slice(),
+            &mut long_qscb2, None
         )?;
         assert_eq!(counter.qb2(), qscb2);
         assert_eq!(counter.qb64().len(), counter.full_size() as usize);
 
         // Test ShortageError if not enough bytes in qb2 parameter
-        let short_qscb2 = qscb2[..qscb2.len()-1].to_vec();
+        let mut short_qscb2 = qscb2[..qscb2.len()-1].to_vec();
         let result = BaseCounter::from_qb2(
-            short_qscb2.as_slice(),
+            &mut short_qscb2, None
         );
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), MatterError::ShortageError(_)));
@@ -1188,7 +1202,7 @@ mod tests {
         let count = 5u64;
         let qsc = format!("{}{}", ctr_dex_1_0::CONTROLLER_IDX_SIGS, int_to_b64(count as u32, 2));
         assert_eq!(qsc, "-AAF");
-        let qscb = qsc.as_bytes().to_vec();
+        let mut qscb = qsc.as_bytes().to_vec();
         let qscb2 = decode_b64(&qsc)?;
 
         let counter = BaseCounter::from_code_and_count(
@@ -1207,7 +1221,7 @@ mod tests {
 
         // Test with qb64 bytes
         let counter = BaseCounter::from_qb64b(
-            Some(qscb.as_slice()),
+            &mut qscb, None
         )?;
         assert_eq!(counter.code, ctr_dex_1_0::CONTROLLER_IDX_SIGS);
         assert_eq!(counter.name(), "-A");
@@ -1332,9 +1346,9 @@ mod tests {
         let qscb = qsc.as_bytes().to_vec();
         let qscb2 = decode_b64(&qsc)?;
 
-        let ims = qscb.clone();
+        let mut ims = qscb.clone();
         let counter = BaseCounter::from_qb64b(
-            Some(ims.as_slice()),
+            &mut ims, None,
         )?;
         assert_eq!(counter.code, ctr_dex_1_0::BIG_ATTACHMENT_GROUP);
         assert_eq!(counter.name(), "-0V");
@@ -1348,9 +1362,9 @@ mod tests {
         // Doesn't support strip yet
         // assert_eq!(ims.len(), 0); // Consumed/stripped
 
-        let ims = qscb2.clone();
+        let mut ims = qscb2.clone();
         let counter = BaseCounter::from_qb2(
-            ims.as_slice(),
+            &mut ims, None,
         )?;
         assert_eq!(counter.code, ctr_dex_1_0::BIG_ATTACHMENT_GROUP);
         assert_eq!(counter.name(), "-0V");

@@ -170,4 +170,14 @@ pub enum MatterError {
 
     #[error("Cold start error: {0}")]
     ColdStartError(String),
+
+    #[error("Need more data")]
+    NeedMoreDataError(String),
+
+    #[error("Not implemented: {0}")]
+    NotImplementedError(String),
+
+    #[error("Unknow Message: {0}")]
+    UnknownMessageTypeError(String),
+
 }

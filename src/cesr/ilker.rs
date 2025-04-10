@@ -22,6 +22,9 @@ impl Matter for Ilker {
     fn qb64(&self) -> String { self.base.qb64() }
     fn qb64b(&self) -> Vec<u8> { self.base.qb64b() }
     fn qb2(&self) -> Vec<u8> { self.base.qb2() }
+    fn soft(&self) -> &str { self.base.soft() }
+    fn full_size(&self) -> usize { self.base.full_size() }
+    fn size(&self) -> usize { self.base.size() }
     fn is_transferable(&self) -> bool { self.base.is_transferable() }
     fn is_digestive(&self) -> bool { self.base.is_digestive() }
     fn is_prefixive(&self) -> bool { self.base.is_prefixive() }

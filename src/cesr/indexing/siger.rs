@@ -1,4 +1,5 @@
 use crate::cesr::indexing::{idx_sig_dex, BaseIndexer, Indexer};
+use crate::cesr::Parsable;
 use crate::cesr::verfer::Verfer;
 use crate::errors::MatterError;
 
@@ -35,17 +36,6 @@ impl Siger {
         })
     }
 
-    pub fn from_qb64b(qb64b: Option<&[u8]>, verfer: Option<Verfer>) -> Result<Self, MatterError> {
-        let base = BaseIndexer::from_qb64b(qb64b)?;
-        if !idx_sig_dex::TUPLE.contains(&(base.code())) {
-            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
-        }
-
-        Ok(Siger {
-            base,
-            verfer
-        })
-    }
 
     pub fn from_qb64(qb64: &str, verfer: Option<Verfer>) -> Result<Self, MatterError> {
         let base = BaseIndexer::from_qb64(qb64)?;
@@ -59,21 +49,37 @@ impl Siger {
         })
     }
 
-    pub fn from_qb2(qb2: &[u8], verfer: Option<Verfer>) -> Result<Self, MatterError> {
-        let base = BaseIndexer::from_qb2(qb2)?;
+
+    pub fn verfer(&self) -> &Verfer {
+        self.verfer.as_ref().unwrap()
+    }
+}
+
+impl Parsable for Siger {
+    fn from_qb64b(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let base = BaseIndexer::from_qb64b(data, strip)?;
         if !idx_sig_dex::TUPLE.contains(&(base.code())) {
             return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
         }
 
         Ok(Siger {
             base,
-            verfer
+            verfer: None
         })
     }
 
-    pub fn verfer(&self) -> &Verfer {
-        self.verfer.as_ref().unwrap()
+    fn from_qb2(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let base = BaseIndexer::from_qb2(data, strip)?;
+        if !idx_sig_dex::TUPLE.contains(&(base.code())) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Siger {
+            base,
+            verfer: None
+        })
     }
+
 }
 
 impl Indexer for Siger {
@@ -82,6 +88,7 @@ impl Indexer for Siger {
     fn qb64(&self) -> String { self.base.qb64() }
     fn qb64b(&self) -> Vec<u8> { self.base.qb64b() }
     fn qb2(&self) -> Vec<u8> { self.base.qb2() }
+    fn full_size(&self) -> u32 { self.base.full_size() }
     fn index(&self) -> u32 { self.base.index() }
     fn ondex(&self) -> u32 { self.base.ondex() }
 }

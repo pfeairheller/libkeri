@@ -1,18 +1,21 @@
+use crate::cesr::cigar::Cigar;
+use crate::cesr::counting::{ctr_dex_1_0, BaseCounter, Counter};
+use crate::cesr::dater::Dater;
+use crate::cesr::diger::Diger;
+use crate::cesr::indexing::siger::Siger;
+use crate::cesr::pather::Pather;
+use crate::cesr::prefixer::Prefixer;
+use crate::cesr::saider::Saider;
+use crate::cesr::seqner::Seqner;
+use crate::cesr::texter::Texter;
+use crate::cesr::COLDS;
+use crate::cesr::{sniff, Parsable, Versionage, VRSN_1_0};
+use crate::errors::MatterError;
+use crate::keri::serdering::{Serder, SerderACDC, SerderKERI, Serdery};
+use crate::keri::{Ilk, KERIError};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
-use crate::keri::{Ilk, KERIError};
-use crate::keri::serdering::{Serder, SerderACDC, SerderKERI, Serdery};
-use crate::cesr::cigar::Cigar;
-use crate::cesr::dater::Dater;
-use crate::cesr::prefixer::Prefixer;
-use crate::cesr::seqner::Seqner;
-use crate::cesr::saider::Saider;
-use crate::cesr::indexing::siger::Siger;
-use crate::cesr::{sniff, VRSN_1_0};
-use crate::cesr::COLDS;
-use crate::cesr::diger::Diger;
-use crate::cesr::pather::Pather;
-use crate::cesr::texter::Texter;
+use crate::cesr::verfer::Verfer;
 
 /// Trans Indexed Sig Groups
 #[derive(Debug, Clone)]
@@ -27,7 +30,7 @@ pub struct Tsgs {
 pub struct Trqs {
     prefixer: Prefixer,
     seqner: Seqner,
-    diger: Diger,
+    saider: Saider,
     siger: Siger,
 }
 
@@ -73,11 +76,24 @@ pub struct SadTsgs {
 }
 
 #[derive(Debug, Clone)]
-pub struct SadCigars {
+pub struct SadSigers {
     path: Pather,
-    cigars: Vec<Cigar>,
+    sigers: Vec<Siger>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SadCigars {
+    path: Pather,
+    cigar: Cigar,
+}
+
+
+/// Enum to represent the different types of SadPathGroups
+pub enum SadPathGroup {
+    TransIdxSig(SadTsgs),
+    ControllerIdxSig(SadSigers),
+    NonTransReceipt(SadCigars),
+}
 
 /// Represents all possible parsed messages from a KERI stream that can be processed
 /// by Kevery, Tevery, Exchanger, Revery, or Verifier
@@ -91,6 +107,8 @@ pub enum Message {
         delsaider: Option<Saider>,
         firner: Option<Seqner>,
         dater: Option<Dater>,
+        cigars: Option<Vec<Cigar>>,  // For process attached receipt couples
+        trqs: Option<Vec<Trqs>>, // For process attached receipt quadruples
         local: Option<bool>,
     },
 
@@ -170,40 +188,6 @@ pub enum Message {
 
 // Implementation with helper methods
 impl Message {
-    /// Creates a new Event message
-    pub fn new_event(
-        serder: Box<dyn Serder>,
-        sigers: Option<Vec<Siger>>,
-        wigers: Option<Vec<Siger>>,
-        delseqner: Option<Seqner>,
-        delsaider: Option<Saider>,
-        firner: Option<Seqner>,
-        dater: Option<Dater>,
-        local: Option<bool>,
-    ) -> Self {
-        Message::KeyEvent {
-            serder,
-            sigers,
-            wigers,
-            delseqner,
-            delsaider,
-            firner,
-            dater,
-            local,
-        }
-    }
-
-    /// Creates a new Receipt message
-    pub fn new_receipt(serder: Box<dyn Serder>, cigars: Vec<Cigar>, local: Option<bool>) -> Self {
-        Message::Receipt {
-            serder,
-            cigars,
-            local,
-        }
-    }
-
-    // Add similar factory methods for other variants...
-
     /// Returns the serder from any message type
     pub fn serder(&self) -> &Box<dyn Serder> {
         match self {
@@ -278,41 +262,423 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
             self.buffer.extend_from_slice(&chunk[..n]);
 
             // Process buffer into messages
-            while let Some((msg, consumed)) = self.try_parse_message()? {
+            loop {
+                let (msg, consumed) = self.try_parse_message()?;
                 self.dispatch_message(msg).await?;
-                self.buffer.drain(..consumed);
             }
         }
         Ok(())
     }
 
-    fn try_parse_message(&self) -> Result<Option<(Message, usize)>, KERIError> {
-        let serder = self.serdery.reap(self.buffer.as_slice(), "-AAAA", &VRSN_1_0, None, None)?;
+    fn try_parse_message(&mut self) -> Result<(Message, usize), MatterError> {
+        let serder = self.serdery.reap(self.buffer.as_slice(), "-AAAA", &VRSN_1_0, None, None)
+            .map_err(|_| MatterError::EncodingError("Invalid UTF-8 in count chars".to_string()))?;
         let serder_size = serder.size();
+        self.buffer.drain(..serder_size);
+
         match sniff(self.buffer.as_slice()) {
             Ok(cold) => {
                 if cold == COLDS.msg {
-                    return Ok(None);
+                    return Err(MatterError::NeedMoreDataError("".to_string()));
                 }
-
-
                 let mut attachment_size = 0;
 
-                // TODO: Parser attachments
+                // Initialize collections for different attachment types
+                let mut sigers: Vec<Siger> = Vec::new();
+                let mut wigers: Vec<Siger> = Vec::new();
+                let mut cigars: Vec<Cigar> = Vec::new();
+                let mut trqs: Vec<Trqs> = Vec::new();
+                let mut tsgs: Vec<Tsgs> = Vec::new();
+                let mut ssgs: Vec<(Ssgs)> = Vec::new();
+                let mut frcs: Vec<Frcs> = Vec::new();
+                let mut sscs: Vec<Sscs> = Vec::new();
+                let mut ssts: Vec<Ssts> = Vec::new();
+                let mut sadtsgs: Vec<SadTsgs> = Vec::new();
+                let mut sadsigs: Vec<SadSigers> = Vec::new();
+                let mut sadcigs: Vec<SadCigars> = Vec::new();
+                let mut pathed: Vec<Vec<u8>> = Vec::new();
+                let mut essrs: Vec<Texter> = Vec::new();
+
+                // Check if we have more data in the buffer for attachments
+                if !self.buffer.is_empty() {
+                    // Determine the stream state (txt or bny)
+                    let mut cold = sniff(&self.buffer)?;
+
+                    // Not a new message so process attachments
+                    if cold != COLDS.msg {
+                        let mut pipelined = false;
+
+                        // Extract counter at front of attachments
+                        match self._extractor::<BaseCounter>(cold, false, &VRSN_1_0) {
+                            Ok(ctr) => {
+                                // Check if this is a pipelined attachment group
+                                if ctr.code() == ctr_dex_1_0::ATTACHMENT_GROUP {
+                                    pipelined = true;
+
+                                    // Compute pipelined attached group size based on txt or bny
+                                    let pags = if cold == COLDS.txt {
+                                        ctr.count() * 4
+                                    } else {
+                                        ctr.count() * 3
+                                    };
+
+                                    // Make sure we have enough data for the full pipelined group
+                                    if self.buffer.len() < pags as usize {
+                                        return Err(MatterError::NeedMoreDataError("".to_string()));
+                                    }
+
+                                    // Extract counter from the pipelined data
+                                    match self._extractor::<BaseCounter>(cold, pipelined, &VRSN_1_0) {
+                                        Ok(extracted_ctr) => {
+                                            self.process_attachments(
+                                                &extracted_ctr,
+                                                cold,
+                                                pipelined,
+                                                &mut sigers,
+                                                &mut wigers,
+                                                &mut cigars,
+                                                &mut trqs,
+                                                &mut tsgs,
+                                                &mut ssgs,
+                                                &mut frcs,
+                                                &mut sscs,
+                                                &mut ssts,
+                                                &mut sadtsgs,
+                                                &mut sadsigs,
+                                                &mut sadcigs,
+                                                &mut pathed,
+                                                &mut essrs
+                                            )?;
+                                        },
+                                        Err(e) => return Err(e),
+                                    }
+                                } else {
+                                    // Not pipelined, process attachments iteratively
+                                    let mut current_ctr = ctr;
+                                    loop {
+                                        // Process the current counter
+                                        self.process_attachments(
+                                            &current_ctr,
+                                            cold,
+                                            pipelined,
+                                            &mut sigers,
+                                            &mut wigers,
+                                            &mut cigars,
+                                            &mut trqs,
+                                            &mut tsgs,
+                                            &mut ssgs,
+                                            &mut frcs,
+                                            &mut sscs,
+                                            &mut ssts,
+                                            &mut sadtsgs,
+                                            &mut sadsigs,
+                                            &mut sadcigs,
+                                            &mut pathed,
+                                            &mut essrs
+                                        )?;
+
+                                        // Check if we're at the end or should continue
+                                        if pipelined {
+                                            if self.buffer.is_empty() {
+                                                break;  // End of pipelined group frame
+                                            }
+                                        } else if self.framed {
+                                            if self.buffer.is_empty() {
+                                                break;  // End of frame
+                                            }
+                                            let new_cold = sniff(&self.buffer)?;
+                                            if new_cold == COLDS.msg {
+                                                break;  // New message, attachments done
+                                            }
+                                            cold = new_cold;
+                                        } else {
+                                            // Process until next message
+                                            if self.buffer.is_empty() {
+                                                return Err(MatterError::NeedMoreDataError("Need more data".to_string()));
+                                            }
+                                            let new_cold = sniff(&self.buffer)?;
+                                            if new_cold == COLDS.msg {
+                                                break;  // New message, attachments done
+                                            }
+                                            cold = new_cold;
+                                        }
+
+                                        // Extract the next counter
+                                        match self._extractor::<BaseCounter>(cold, false, &VRSN_1_0) {
+                                            Ok(next_ctr) => {
+                                                current_ctr = next_ctr;
+                                            },
+                                            Err(e) => return Err(e),
+                                        }
+                                    }
+                                }
+                            },
+                            Err(e) => return Err(e),
+                        }
+                    }
+                }
 
                 attachment_size += 0;
-                Ok(Some((Message::new_event(serder, None, None, None, None, None, None, None), serder_size + attachment_size)))
+
+                // Now construct appropriate Message variant based on serder and attachments
+                let msg = self.process_message(serder, sigers,
+                                               wigers, cigars,
+                                               trqs, tsgs, ssgs, sscs,
+                                               frcs, ssts, pathed,
+                                               sadtsgs, sadcigs, essrs, self.handlers.local)?;
+
+                Ok((msg, serder_size + attachment_size))
             }
             Err(_) => {
-                Err(KERIError::Shortage("Short on the sniff".to_string()))
+                Err(MatterError::Shortage("Short on the sniff".to_string()))
             }
         }
     }
 
+    // Helper method to process a single counter and its data
+    fn process_attachments(
+        &mut self,
+        ctr: &BaseCounter,
+        cold: &str,
+        pipelined: bool,
+        sigers: &mut Vec<Siger>,
+        wigers: &mut Vec<Siger>,
+        cigars: &mut Vec<Cigar>,
+        trqs: &mut Vec<Trqs>,
+        tsgs: &mut Vec<Tsgs>,
+        ssgs: &mut Vec<Ssgs>,
+        frcs: &mut Vec<Frcs>,
+        sscs: &mut Vec<Sscs>,
+        ssts: &mut Vec<Ssts>,
+        sadtsgs: &mut Vec<SadTsgs>,
+        sadsigs: &mut Vec<SadSigers>,
+        sadcigs: &mut Vec<SadCigars>,
+        pathed: &mut Vec<Vec<u8>>,
+        essrs: &mut Vec<Texter>
+    ) -> Result<(), MatterError> {
+        match ctr.code() {
+            ctr_dex_1_0::CONTROLLER_IDX_SIGS => {
+                for _ in 0..ctr.count() {
+                    match self._extractor::<Siger>(cold, pipelined, &VRSN_1_0) {
+                        Ok(siger) => sigers.push(siger),
+                        Err(e) => return Err(e),
+                    }
+                }
+            },
+
+            ctr_dex_1_0::WITNESS_IDX_SIGS => {
+                for _ in 0..ctr.count() {
+                    match self._extractor::<Siger>(cold, pipelined, &VRSN_1_0) {
+                        Ok(wiger) => wigers.push(wiger),
+                        Err(e) => return Err(e),
+                    }
+                }
+            },
+
+            ctr_dex_1_0::NON_TRANS_RECEIPT_COUPLES => {
+                // Extract receipt couplets into cigars
+                match self.non_trans_receipt_couples(ctr, cold, pipelined, &VRSN_1_0) {
+                    Ok(extracted_cigars) => cigars.extend(extracted_cigars),
+                    Err(e) => return Err(e),
+                }
+            },
+
+            ctr_dex_1_0::NON_TRANS_RECEIPT_COUPLES => {
+                for _ in 0..ctr.count() {
+                    // Extract each attached quadruple
+                    let prefixer = match self._extractor::<Prefixer>(cold, pipelined, &VRSN_1_0) {
+                        Ok(p) => p,
+                        Err(e) => return Err(e),
+                    };
+
+                    let seqner = match self._extractor::<Seqner>(cold, pipelined, &VRSN_1_0) {
+                        Ok(s) => s,
+                        Err(e) => return Err(e),
+                    };
+
+                    let saider = match self._extractor::<Saider>(cold, pipelined, &VRSN_1_0) {
+                        Ok(s) => s,
+                        Err(e) => return Err(e),
+                    };
+
+                    let siger = match self._extractor::<Siger>(cold, pipelined, &VRSN_1_0) {
+                        Ok(s) => s,
+                        Err(e) => return Err(e),
+                    };
+
+                    trqs.push(Trqs{prefixer, seqner, saider, siger});
+                }
+            },
+
+            ctr_dex_1_0::TRANS_IDX_SIG_GROUPS => {
+                match self.trans_idx_sig_groups(ctr, cold, pipelined, &VRSN_1_0) {
+                    Ok(extracted_tsgs) => tsgs.extend(extracted_tsgs),
+                    Err(e) => return Err(e),
+                }
+            },
+
+            ctr_dex_1_0::TRANS_LAST_IDX_SIG_GROUPS => {
+                for _ in 0..ctr.count() {
+                    let prefixer = match self._extractor::<Prefixer>(cold, pipelined, &VRSN_1_0) {
+                        Ok(p) => p,
+                        Err(e) => return Err(e),
+                    };
+
+                    let ictr = match self._extractor::<BaseCounter>(cold, pipelined, &VRSN_1_0) {
+                        Ok(c) => c,
+                        Err(e) => return Err(e),
+                    };
+
+                    if ictr.code() != ctr_dex_1_0::CONTROLLER_IDX_SIGS {
+                        return Err(MatterError::UnexpectedCountCodeError(format!(
+                            "Wrong count code={}. Expected code={}.",
+                            ictr.code(),
+                            ctr_dex_1_0::CONTROLLER_IDX_SIGS
+                        )));
+                    }
+
+                    let mut isigers = Vec::new();
+                    for _ in 0..ictr.count() {
+                        match self._extractor::<Siger>(cold, pipelined, &VRSN_1_0) {
+                            Ok(isiger) => isigers.push(isiger),
+                            Err(e) => return Err(e),
+                        }
+                    }
+
+                    ssgs.push(Ssgs{ prefixer, sigers: isigers});
+               }
+            },
+
+            ctr_dex_1_0::FIRST_SEEN_REPLAY_COUPLES => {
+                for _ in 0..ctr.count() {
+                    let firner = match self._extractor::<Seqner>(cold, pipelined, &VRSN_1_0) {
+                        Ok(f) => f,
+                        Err(e) => return Err(e),
+                    };
+
+                    let dater = match self._extractor::<Dater>(cold, pipelined, &VRSN_1_0) {
+                        Ok(d) => d,
+                        Err(e) => return Err(e),
+                    };
+
+                    frcs.push(Frcs{seqner: firner, dater});
+                }
+            },
+
+            ctr_dex_1_0::SEAL_SOURCE_COUPLES => {
+                for _ in 0..ctr.count() {
+                    let seqner = match self._extractor::<Seqner>(cold, pipelined, &VRSN_1_0) {
+                        Ok(s) => s,
+                        Err(e) => return Err(e),
+                    };
+
+                    let saider = match self._extractor::<Saider>(cold, pipelined, &VRSN_1_0) {
+                        Ok(s) => s,
+                        Err(e) => return Err(e),
+                    };
+
+                    sscs.push(Sscs{seqner, saider});
+                }
+            },
+
+            ctr_dex_1_0::SEAL_SOURCE_TRIPLES => {
+                for _ in 0..ctr.count() {
+                    let prefixer = match self._extractor::<Prefixer>(cold, pipelined, &VRSN_1_0) {
+                        Ok(p) => p,
+                        Err(e) => return Err(e),
+                    };
+
+                    let seqner = match self._extractor::<Seqner>(cold, pipelined, &VRSN_1_0) {
+                        Ok(s) => s,
+                        Err(e) => return Err(e),
+                    };
+
+                    let saider = match self._extractor::<Saider>(cold, pipelined, &VRSN_1_0) {
+                        Ok(s) => s,
+                        Err(e) => return Err(e),
+                    };
+
+                    ssts.push(Ssts{prefixer, seqner, saider});
+                }
+            },
+
+            ctr_dex_1_0::SAD_PATH_SIG_GROUPS => {
+                let path = match self._extractor::<Pather>(cold, pipelined, &VRSN_1_0) {
+                    Ok(p) => p,
+                    Err(e) => return Err(e),
+                };
+
+                for _ in 0..ctr.count() {
+                    let ictr = match self._extractor::<BaseCounter>(cold, pipelined, &VRSN_1_0) {
+                        Ok(c) => c,
+                        Err(e) => return Err(e),
+                    };
+
+                    match self.sad_path_sig_group(&ictr, Some(&path), cold, pipelined, &VRSN_1_0) {
+                        Ok(groups) => {
+                            for group in groups {
+                                match group {
+                                    SadPathGroup::TransIdxSig(sadtsg) => {
+                                        sadtsgs.push(sadtsg);
+                                    }
+                                    SadPathGroup::ControllerIdxSig(sadsiger) => {
+                                        sadsigs.push(sadsiger);
+                                    }
+                                    SadPathGroup::NonTransReceipt(sadcigar) => {
+                                        sadcigs.push(sadcigar);
+                                    }
+                                }
+                            }
+                        },
+                        Err(e) => return Err(e),
+                    }
+                }
+            },
+
+            ctr_dex_1_0::PATHED_MATERIAL_GROUP | ctr_dex_1_0::BIG_PATHED_MATERIAL_GROUP => {
+                // Compute size of pathed material based on txt or bny
+                let pags = if cold == COLDS.txt {
+                    ctr.count() * 4
+                } else {
+                    ctr.count() * 3
+                };
+
+                // Make sure we have enough data
+                if self.buffer.len() < pags as usize {
+                    return Err(MatterError::NeedMoreDataError("Needs more data".to_string()));
+                }
+
+                // Extract the pathed material
+                let pims: Vec<u8> = self.buffer.drain(0..pags as usize).collect();
+                pathed.push(pims);
+            },
+
+            ctr_dex_1_0::ESSR_PAYLOAD_GROUP => {
+                for _ in 0..ctr.count() {
+                    match self._extractor::<Texter>(cold, pipelined, &VRSN_1_0) {
+                        Ok(texter) => essrs.push(texter),
+                        Err(e) => return Err(e),
+                    }
+                }
+            },
+
+            _ => {
+                return Err(MatterError::UnexpectedCountCodeError(format!(
+                    "Unsupported count code={}.",
+                    ctr.code()
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+
+
     async fn dispatch_message(&self, msg: Message) -> Result<(), KERIError> {
         // Match message type to handler
         match msg {
-                Message::KeyEvent { serder: _, sigers: _, wigers: _, delseqner: _, delsaider: _, firner: _, dater: _, local: _ } => {
+                Message::KeyEvent { serder: _, sigers: _, wigers: _, delseqner: _, delsaider: _, firner: _, dater: _, cigars: _, trqs: _, local: _ } => {
                     self.handlers.kevery.handle(msg).await?
                 }
                 Message::Receipt { serder: _, cigars: _, local: _ } => {
@@ -369,6 +735,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
                        sigers: Vec<Siger>,
                        wigers: Vec<Siger>,
                        cigars: Vec<Cigar>,
+                       trqs: Vec<Trqs>,
                        tsgs: Vec<Tsgs>,
                        ssgs: Vec<Ssgs>,
                        sscs: Vec<Sscs>,
@@ -378,8 +745,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
                        sadtsgs: Vec<SadTsgs>,
                        sadcigars: Vec<SadCigars>,
                        essrs: Vec<Texter>,
-                       prefixer: Option<Prefixer>,
-                       local: bool) -> Result<Message, KERIError> {
+                       local: bool) -> Result<Message, MatterError> {
 
         // Check if serder is SerderKERI
         if let Some(keri_serder) = serder.as_any().downcast_ref::<SerderKERI>() {
@@ -401,7 +767,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
                     let msg = format!("Missing attached signature(s) for evt = {}", d.as_str());
                     tracing::info!("{}", msg);
                     tracing::debug!("Event Body = \n{}\n", keri_serder.pretty(None));
-                    return Err(KERIError::ValidationError(msg));
+                    return Err(MatterError::ValidationError(msg));
                 }
 
                 // Create KeyEvent message
@@ -413,6 +779,8 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
                     delsaider,
                     firner,
                     dater,
+                    cigars: Some(cigars),
+                    trqs: Some(trqs),
                     local: Some(local),
                 };
 
@@ -425,7 +793,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
                                       keri_serder.sn().unwrap(), keri_serder.said().unwrap());
                     tracing::info!("{}", msg);
                     tracing::debug!("Receipt body=\n{}\n", keri_serder.pretty(None));
-                    return Err(KERIError::ValidationError(msg));
+                    return Err(MatterError::ValidationError(msg));
                 }
 
                 if !cigars.is_empty() {
@@ -457,7 +825,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
                 if cigars.is_empty() && tsgs.is_empty() {
                     let msg = format!("Missing attached endorser signature(s) to reply msg = {}",
                                       keri_serder.pretty(None));
-                    return Err(KERIError::ValidationError(msg));
+                    return Err(MatterError::ValidationError(msg));
                 }
 
                 if !cigars.is_empty() {
@@ -496,7 +864,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
                 } else {
                     let msg = format!("Missing attached requester signature(s) to key log query msg = {}",
                                       keri_serder.pretty(None));
-                    Err(KERIError::ValidationError(msg))
+                    Err(MatterError::ValidationError(msg))
                 }
             }
             // Exchange message
@@ -521,7 +889,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
 
                 let msg = format!("Missing attached signatures for exchange message = {}",
                                   keri_serder.pretty(None));
-                return Err(KERIError::ValidationError(msg));
+                return Err(MatterError::ValidationError(msg));
             }
             // TEL message
             else if ilk == Some(Ilk::Vcp) || ilk == Some(Ilk::Vrt) || ilk == Some(Ilk::Iss) ||
@@ -540,7 +908,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
             else {
                 let msg = format!("Unexpected message ilk = {} for evt = {}",
                                   ilk.unwrap(), keri_serder.pretty(None));
-                return Err(KERIError::ValidationError(msg));
+                return Err(MatterError::ValidationError(msg));
             }
         }
         // Check if serder is SerderACDC
@@ -562,20 +930,264 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
             } else {
                 let msg = format!("Unexpected message ilk = {:?} for evt = {}",
                                   ilk, acdc_serder.pretty(None));
-                Err(KERIError::ValidationError(msg))
+                Err(MatterError::ValidationError(msg))
             }
         }
         else {
             let msg = format!("Unexpected protocol type = {} for event message = {}",
                               serder.proto(), serder.pretty(None));
-            return Err(KERIError::ValidationError(msg));
+            return Err(MatterError::ValidationError(msg));
         }
 
         // If we get here, something went wrong in the logic above
-        Err(KERIError::ValidationError("Failed to process message".to_string()))
+        Err(MatterError::ValidationError("Failed to process message".to_string()))
+    }
+
+    /// Returns a Result containing an instance of the provided type T from the input message stream.
+    ///
+    /// # Parameters
+    /// * `ims` - A mutable reference to bytes that can be stripped
+    /// * `cold` - Stream state indicator (txt or bny)
+    /// * `abort` - True means abort if bad pipelined frame, False means wait for more data
+    /// * `gvrsn` - Instance of genera version of CESR code tables
+    ///
+    /// # Returns
+    /// * `Result<T, MatterError>` - Either the successfully parsed instance or an error
+    ///
+    /// # Errors
+    /// * `ColdStartError` - If the stream state is invalid
+    /// * `ShortageError` - If not enough bytes in stream and abort is true
+    ///
+    /// # Type Parameters
+    /// * `T` - A type that implements the Parsable trait (equivalent to Serder, Counter, Matter, Indexer)
+    ///
+    pub fn _extractor<T: Parsable>(
+        &mut self,
+        cold: &str,
+        abort: bool,
+        gvrsn: &Versionage
+    ) -> Result<T, MatterError> {
+        // Try parsing until we either succeed or get a shortage error
+        loop {
+            let result = match cold {
+                "txt" => T::from_qb64b(&mut self.buffer, Some(true)),
+                "bny" => T::from_qb2(&mut self.buffer, Some(true)),
+                _ => Err(MatterError::ColdStartError(
+                    format!("Invalid stream state cold={:?}.", cold)
+                ))
+            };
+
+            return match result {
+                Ok(instance) => Ok(instance),
+                Err(MatterError::ShortageError(_)) if !abort => {
+                    // In Python, this would yield control back to caller
+                    // In Rust, we need to signal that more data is needed
+                    Err(MatterError::NeedMoreDataError("Needs more data".to_string()))
+                },
+                Err(err) => Err(err),
+            }
+        }
+    }
+
+    /// Extract sad path signature groups
+    ///
+    /// # Parameters
+    /// * `ctr` - Group type counter
+    /// * `ims` - Serialized incoming message stream
+    /// * `root` - Optional root path of this group
+    /// * `cold` - Next character Coldage type indicator
+    /// * `pipelined` - Whether to use pipeline processor
+    ///
+    /// # Returns
+    /// * Vector of tuples containing extracted sad path signature groups
+    pub fn sad_path_sig_group(
+        &mut self,
+        ctr: &BaseCounter,
+        root: Option<&Pather>,
+        cold: &str,
+        pipelined: bool,
+        gvrsn: &Versionage
+    ) -> Result<Vec<SadPathGroup>, MatterError> {
+        // Verify that the counter code is SadPathSigGroups
+        if ctr.code() != ctr_dex_1_0::SAD_PATH_SIG_GROUPS {
+            return Err(MatterError::UnexpectedCountCodeError(format!(
+                "Wrong count code={}. Expected code={}.",
+                ctr.code(),
+                ctr_dex_1_0::SAD_PATH_SIG_GROUPS
+            )));
+        }
+
+        // Extract subpath
+        let mut subpath = self._extractor::<Pather>(cold, pipelined, gvrsn)?;
+
+        // Apply root if provided
+        // TODO: fix this code to match subpath logic in KERIpy
+        if let Some(_) = root {
+            subpath = subpath.root();
+        }
+
+        // Extract subcounter
+        let sctr = self._extractor::<BaseCounter>(cold, pipelined, gvrsn)?;
+
+        let mut result = Vec::new();
+
+        // Process based on subcounter code
+        match sctr.code() {
+            ctr_dex_1_0::TRANS_IDX_SIG_GROUPS => {
+                // Extract TransIdxSigGroups
+                let trans_groups = self.trans_idx_sig_groups(&sctr, cold, pipelined, gvrsn)?;
+
+                for tsgs in trans_groups {
+                    let group = SadPathGroup::TransIdxSig(SadTsgs {
+                        path: subpath.clone(),
+                        prefixer: tsgs.prefixer,
+                        seqner: tsgs.seqner,
+                        saider: tsgs.saider,
+                        sigers: tsgs.sigers,
+                    }.clone());
+                    result.push(group);
+                }
+            },
+
+            ctr_dex_1_0::CONTROLLER_IDX_SIGS => {
+                // Extract ControllerIdxSigs
+                let mut isigers = Vec::with_capacity(sctr.count() as usize);
+
+                for _ in 0..sctr.count() {
+                    let isiger = self._extractor::<Siger>(cold, pipelined, gvrsn)?;
+                    isigers.push(isiger);
+                }
+
+                let group = SadPathGroup::ControllerIdxSig(SadSigers {
+                    path: subpath,
+                    sigers: isigers
+                });
+                result.push(group);
+            },
+
+            ctr_dex_1_0::NON_TRANS_RECEIPT_COUPLES => {
+                // Extract NonTransReceiptCouples
+                let cigars = self.non_trans_receipt_couples(&sctr, cold, pipelined, gvrsn)?;
+
+                for cigar in cigars {
+                    let group = SadPathGroup::NonTransReceipt(SadCigars {
+                        path: subpath.clone(),
+                        cigar
+                    });
+                    result.push(group);
+                }
+            },
+
+            _ => {
+                return Err(MatterError::UnexpectedCountCodeError(format!(
+                    "Wrong count code={}. Expected one of TransIdxSigGroups, ControllerIdxSigs, or NonTransReceiptCouples.",
+                    sctr.code()
+                )));
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Extract attached trans indexed sig groups, each made of:
+    /// - triple pre+snu+dig plus indexed sig group
+    /// - pre is pre of signer (endorser) of msg
+    /// - snu is sn of signer's est evt when signed
+    /// - dig is dig of signer's est event when signed
+    /// Followed by counter for ControllerIdxSigs with attached
+    /// indexed sigs from trans signer (endorser).
+    ///
+    /// # Parameters
+    /// * `ctr` - Group type counter
+    /// * `ims` - Serialized incoming message stream
+    /// * `cold` - Next character Coldage type indicator
+    /// * `pipelined` - Whether to use pipeline processor
+    ///
+    /// # Returns
+    /// * Vector of tuples containing (prefixer, seqner, saider, isigers)
+    pub fn trans_idx_sig_groups(
+        &mut self,
+        ctr: &BaseCounter,
+        cold: &str,
+        pipelined: bool,
+        gvrsn: &Versionage
+    ) -> Result<Vec<Tsgs>, MatterError> {
+        let mut groups = Vec::with_capacity(ctr.count() as usize);
+
+        for _ in 0..ctr.count() {
+            // Extract prefixer
+            let prefixer = self._extractor::<Prefixer>(cold, pipelined, gvrsn)?;
+
+            // Extract seqner
+            let seqner = self._extractor::<Seqner>(cold, pipelined, gvrsn)?;
+
+            // Extract saider
+            let saider = self._extractor::<Saider>(cold, pipelined, gvrsn)?;
+
+            // Extract counter for ControllerIdxSigs
+            let ictr = self._extractor::<BaseCounter>(cold, pipelined, gvrsn)?;
+
+            // Verify that the counter code is ControllerIdxSigs
+            if ictr.code() != ctr_dex_1_0::CONTROLLER_IDX_SIGS {
+                return Err(MatterError::UnexpectedCountCodeError(format!(
+                    "Wrong count code={}. Expected code={}.",
+                    ictr.code(),
+                    ctr_dex_1_0::CONTROLLER_IDX_SIGS
+                )));
+            }
+
+            // Extract each attached signature
+            let mut isigers = Vec::with_capacity(ictr.count() as usize);
+            for _ in 0..ictr.count() {
+                let isiger = self._extractor::<Siger>(cold, pipelined, gvrsn)?;
+                isigers.push(isiger);
+            }
+
+            // Add the group to our results
+            groups.push(Tsgs{prefixer, seqner, saider, sigers: isigers});
+        }
+
+        Ok(groups)
+    }
+
+    /// Extract attached receipt couplets into a vector of cigars
+    /// Verfer property of each cigar is the identifier prefix
+    /// Cigar itself has the attached signature
+    ///
+    /// # Parameters
+    /// * `ctr` - Counter with count field indicating number of attachments
+    /// * `ims` - Input stream containing serialized message data
+    /// * `cold` - Character coldage type indicator
+    /// * `pipelined` - Whether to use pipeline processor for stream
+    ///
+    /// # Returns
+    /// * Vector of Cigar objects with attached verfers
+    pub fn non_trans_receipt_couples(
+        &mut self,
+        ctr: &BaseCounter,
+        cold: &str,
+        pipelined: bool,
+        gvrsn: &Versionage
+    ) -> Result<Vec<Cigar>, MatterError> {
+        let mut cigars = Vec::with_capacity(ctr.count() as usize);
+
+        for _ in 0..ctr.count() {
+            // Extract verfer
+            let verfer = self._extractor::<Verfer>(cold, pipelined, gvrsn)?;
+
+            // Extract cigar
+            let mut cigar = self._extractor::<Cigar>(cold, pipelined, gvrsn)?;
+
+            // Attach verfer to cigar
+            cigar.verfer = Some(verfer);
+
+            // Add to results
+            cigars.push(cigar);
+        }
+
+        Ok(cigars)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -593,7 +1205,7 @@ mod tests {
     #[tokio::test]
     async fn test_parser_valid_message() {
         // Provide CESR-encoded message bytes matching KERIpy tests
-        let input = r#"{"v":"KERI10JSON00012b_","t":"icp","d":"EIcca2-uqsicYK7-q5gxlZXuzOkqrNSL3JIaLflSOOgF","i":"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx","s":"0","kt":"1","k":["DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx"],"nt":"1","n":["EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2"],"bt":"0","b":[],"c":[],"a":[]}-AABAAApXLez5eVIs6YyR XOMDMBy4cTm2GvsilrZlcMmtBbO5twLst_jjFoEyfKTWKntEtv9JPBv1DLkqg-Im DmGPM8E"#.as_bytes();
+        let input = r#"{"v":"KERI10JSON00012b_","t":"icp","d":"EIcca2-uqsicYK7-q5gxlZXuzOkqrNSL3JIaLflSOOgF","i":"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx","s":"0","kt":"1","k":["DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx"],"nt":"1","n":["EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2"],"bt":"0","b":[],"c":[],"a":[]}-AABAAApXLez5eVIs6YyRXOMDMBy4cTm2GvsilrZlcMmtBbO5twLst_jjFoEyfKTWKntEtv9JPBv1DLkqg-ImDmGPM8E"#.as_bytes();
         let reader = tokio::io::BufReader::new(input);
         let handlers = Handlers {
             kevery: Arc::new(MockHandler {}),

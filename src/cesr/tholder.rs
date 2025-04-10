@@ -5,7 +5,7 @@ use crate::cesr::bexter::Bexter;
 use crate::cesr::number::Number;
 use std::fmt::Debug;
 use num_rational::Rational32;
-use crate::cesr::{bex_dex, num_dex, BaseMatter};
+use crate::cesr::{bex_dex, num_dex, BaseMatter, Parsable};
 use crate::errors::MatterError;
 use crate::Matter;
 
@@ -149,7 +149,7 @@ impl Tholder {
     /// * `limen` - CESR encoded qb64 threshold (weighted or unweighted)
     /// * `strip` - Optional flag to strip trailing pad bytes
     pub fn process_limen(&mut self, limen: &[u8], strip: Option<bool>) -> Result<(), MatterError> {
-        let matter = BaseMatter::from_qb64b(Some(limen))?;
+        let matter = BaseMatter::from_qb64b(&mut limen.to_vec(), strip)?;
 
         if num_dex::MAP.contains_key(matter.code()) {
             let number = Number::new(Some(matter.raw()), Some(matter.code()), None, None)?;

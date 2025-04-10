@@ -1,4 +1,4 @@
-use crate::cesr::{mtr_dex, BaseMatter};
+use crate::cesr::{mtr_dex, BaseMatter, Parsable};
 use crate::errors::MatterError;
 use crate::Matter;
 
@@ -37,30 +37,8 @@ impl Dater {
         })
     }
 
-    pub fn from_qb64b(qb64b: Option<&[u8]>) -> Result<Self, MatterError> {
-        let base = BaseMatter::from_qb64b(qb64b)?;
-        if base.code() != mtr_dex::DATE_TIME {
-            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
-        }
-
-        Ok(Dater {
-            base
-        })
-    }
-
     pub fn from_qb64(qb64: &str) -> Result<Self, MatterError> {
         let base = BaseMatter::from_qb64(qb64)?;
-        if base.code() != mtr_dex::DATE_TIME {
-            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
-        }
-
-        Ok(Dater {
-            base
-        })
-    }
-
-    pub fn from_qb2(qb2: &[u8]) -> Result<Self, MatterError> {
-        let base = BaseMatter::from_qb2(qb2)?;
         if base.code() != mtr_dex::DATE_TIME {
             return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
         }
@@ -84,12 +62,42 @@ impl Dater {
     }
 }
 
+impl Parsable for Dater {
+    fn from_qb64b(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb64b(data, strip)?;
+        if base.code() != mtr_dex::DATE_TIME {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Dater {
+            base
+        })
+    }
+
+
+    fn from_qb2(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb2(data, strip)?;
+        if base.code() != mtr_dex::DATE_TIME {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Dater {
+            base
+        })
+    }
+
+
+}
+
 impl Matter for Dater {
     fn code(&self) -> &str { self.base.code() }
     fn raw(&self) -> &[u8] { self.base.raw() }
     fn qb64(&self) -> String { self.base.qb64() }
     fn qb64b(&self) -> Vec<u8> { self.base.qb64b() }
     fn qb2(&self) -> Vec<u8> { self.base.qb2() }
+    fn soft(&self) -> &str { self.base.soft() }
+    fn full_size(&self) -> usize { self.base.full_size() }
+    fn size(&self) -> usize { self.base.size() }
     fn is_transferable(&self) -> bool { self.base.is_transferable() }
     fn is_digestive(&self) -> bool { self.base.is_digestive() }
     fn is_prefixive(&self) -> bool { self.base.is_prefixive() }

@@ -1,5 +1,5 @@
 use sodiumoxide::crypto::sign::ed25519;
-use crate::cesr::{mtr_dex, BaseMatter};
+use crate::cesr::{mtr_dex, non_trans_dex, BaseMatter, Parsable};
 use crate::errors::MatterError;
 use crate::Matter;
 
@@ -9,7 +9,6 @@ use p256::{
     ecdsa::{signature::Verifier, Signature as p256Signature, VerifyingKey}
 };
 use sha2::{Digest, Sha256};
-
 
 ///  Verfer is Matter subclass with method to verify signature of serialization
 ///  using the .raw as verifier key and .code for signature cipher suite.
@@ -196,12 +195,51 @@ impl Verfer {
 
 }
 
+impl Parsable for Verfer {
+    fn from_qb64b(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb64b(data, strip)?;
+        if !non_trans_dex::TUPLE.contains(&(base.code())) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        if ![
+            mtr_dex::ED25519N,
+            mtr_dex::ED25519,
+            mtr_dex::ECDSA_256R1N,
+            mtr_dex::ECDSA_256R1,
+            mtr_dex::ECDSA_256K1N,
+            mtr_dex::ECDSA_256K1,
+        ].contains(&base.code()) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Verfer {
+            base
+        })
+    }
+
+
+    fn from_qb2(data: &mut Vec<u8>, strip: Option<bool>) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb2(data, strip)?;
+        if !non_trans_dex::TUPLE.contains(&(base.code())) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Verfer {
+            base
+        })
+    }
+}
+
 impl Matter for Verfer {
     fn code(&self) -> &str { self.base.code() }
     fn raw(&self) -> &[u8] { self.base.raw() }
     fn qb64(&self) -> String { self.base.qb64() }
     fn qb64b(&self) -> Vec<u8> { self.base.qb64b() }
     fn qb2(&self) -> Vec<u8> { self.base.qb2() }
+    fn soft(&self) -> &str { self.base.soft() }
+    fn full_size(&self) -> usize { self.base.full_size() }
+    fn size(&self) -> usize { self.base.size() }
     fn is_transferable(&self) -> bool { self.base.is_transferable() }
     fn is_digestive(&self) -> bool { self.base.is_digestive() }
     fn is_prefixive(&self) -> bool { self.base.is_prefixive() }
