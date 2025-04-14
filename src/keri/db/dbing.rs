@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::keri::core::filing::{BaseFiler, Filer, FilerDefaults};
 use crate::keri::db::errors::DBError;
-use lmdb::{Database, Environment, EnvironmentFlags, Transaction, WriteFlags};
+use lmdb::{Cursor, Database, Environment, EnvironmentFlags, Iter, Transaction, WriteFlags};
 
 impl LMDBer {
     pub fn builder() -> LMDBerBuilder {
@@ -13,6 +13,7 @@ impl LMDBer {
 pub struct LMDBerBuilder {
     name: String,
     temp: bool,
+    reopen: bool,
     // other fields...
 }
 
@@ -21,6 +22,7 @@ impl Default for LMDBerBuilder {
         Self {
             name: "test".to_string(),
             temp: true,
+            reopen: true
             // other defaults
         }
     }
@@ -37,6 +39,11 @@ impl LMDBerBuilder {
         self
     }
 
+    pub fn reopen(mut self, reopen: bool) -> Self {
+        self.reopen = reopen;
+        self
+    }
+
     // other setters
 
     pub fn build(self) -> Result<LMDBer, DBError> {
@@ -47,7 +54,7 @@ impl LMDBerBuilder {
             self.temp,
             None,  // head_dir_path
             None,  // perm
-            true,  // reopen
+            self.reopen,  // reopen
             false, // clear
             false, // reuse
             false, // clean
@@ -498,6 +505,148 @@ impl LMDBer {
             }
         }
     }
+
+    /// Return count of values in db, or zero otherwise
+    ///
+    /// # Parameters
+    /// * `db` - Opened named sub db with dupsort=True
+    pub fn cnt(&self, db: &Database) -> Result<usize, DBError> {
+        if let Some(env) = &self.env {
+            let txn = env.begin_ro_txn().map_err(|e| DBError::DatabaseError(format!(
+                "Failed to create transaction: {}",
+                e
+            )))?;
+            let mut cursor = txn.open_ro_cursor(*db);
+            let mut count = 0;
+
+            for result in cursor.iter() {
+                match result {
+                    Ok(_) => count += 1,
+                    Err(e) => return Err(DBError::DatabaseError(format!("{}", e))),
+                }
+            }
+
+            Ok(count)
+        } else {
+            Err(DBError::DatabaseError("Not opened".to_string()))
+        }
+    }
+
+    /// Iterates over branch of db given by top key
+    ///
+    /// # Returns
+    /// Iterator of (full key, val) tuples over a branch of the db given by top key
+    /// where: full key is full database key for val not truncated top key
+    ///
+    /// Works for both dupsort==False and dupsort==True
+    ///
+    /// # Parameters
+    /// * `db` - Instance of named sub db
+    /// * `top` - Truncated top key, a key space prefix to get all the items
+    ///           from multiple branches of the key space. If top key is
+    ///           empty then gets all items in database.
+    pub fn get_top_item_iter<'txn>(
+        &self,
+        db: &'txn Database,
+        top: &[u8],
+    ) -> Result<impl Iterator<Item = Result<(Vec<u8>, Vec<u8>), DBError>> + 'txn, DBError> {
+        if let Some(env) = &self.env {
+            let txn = env.begin_ro_txn().map_err(|e| DBError::DatabaseError(format!(
+                "Failed to create transaction: {}",
+                e
+            )))?;
+            let mut cursor = txn.open_ro_cursor(*db).map_err(|e| DBError::DatabaseError(format!(
+                "Failed to open cursor: {}",
+                e
+            )))?;
+
+            // Custom iterator struct to wrap the LMDB cursor
+            struct TopItemIterator<'a> {
+                iter: Iter<'a>,
+                top: Vec<u8>,
+                started: bool,
+            }
+
+            impl<'a> Iterator for TopItemIterator<'a> {
+                type Item = Result<(Vec<u8>, Vec<u8>), DBError>;
+
+                fn next(&mut self) -> Option<Self::Item> {
+                    let result = self.iter.next();
+
+                    match result {
+                        Ok(Some((key, val))) => {
+                            // Check if key starts with top prefix
+                            if !key.starts_with(&self.top) {
+                                return None;
+                            }
+
+                            // Clone the data to return owned values
+                            let key_vec = key.to_vec();
+                            let val_vec = val.to_vec();
+
+                            Some(Ok((key_vec, val_vec)))
+                        },
+                        Ok(None) => None,
+                        Err(e) => Some(Err(DBError::DatabaseError(e))),
+                    }
+                }
+            }
+
+            Ok(TopItemIterator {
+                iter: cursor.iter_from(top.to_vec()),
+                top: top.to_vec(),
+                started: false,
+            })
+        } else {
+            Err(DBError::DatabaseError("Not opened".to_string()))
+        }
+    }
+
+    /// Deletes all values in branch of db given top key.
+    ///
+    /// # Returns
+    /// * `Result<bool, DBError>` - True if values were deleted at key, False otherwise
+    ///                             if no values at key
+    ///
+    /// # Parameters
+    /// * `db` - Instance of named sub db
+    /// * `top` - Truncated top key, a key space prefix to get all the items
+    ///           from multiple branches of the key space. If top key is
+    ///           empty then deletes all items in database
+    pub fn del_top_val(&self, db: &Database, top: &[u8]) -> Result<bool, DBError> {
+        if let Some(env) = &self.env {
+            let mut txn = env.begin_rw_txn()?;
+            let mut cursor = txn.open_rw_cursor(*db).map_err(|e| DBError::DatabaseError(format!(
+                "Failed to create transaction: {}",
+                e
+            )))?;
+            let mut result = false;
+
+            if let Ok(Some((ckey, _))) = cursor.iter_from(top) {
+                if ckey.starts_with(top) {
+                    result = true;
+
+                    // Delete first matching entry
+                    cursor.del(WriteFlags::empty())?;
+
+                    // Delete subsequent matching entries
+                    while let Ok(Some((ckey, _))) = cursor.next() {
+                        if !ckey.starts_with(top) {
+                            break;
+                        }
+
+                        cursor.del(WriteFlags::empty())?;
+                    }
+                }
+            }
+
+            txn.commit()?;
+            Ok(result)
+        } else {
+            Err(DBError::DatabaseError("Not opened".to_string()))
+        }
+    }
+
 }
 
 impl Drop for LMDBer {
@@ -816,6 +965,8 @@ mod tests {
         suffix, unsuffix,
     };
     use chrono::{DateTime, Utc};
+    use lmdb::DatabaseFlags;
+    use tempfile::tempdir;
 
     #[test]
     fn test_key_funcs() {
@@ -1126,6 +1277,7 @@ mod tests {
         let mut databaser = LMDBer::builder()
             .name("main")
             .temp(false)
+            .reopen(false)
             .build()
             .expect("Failed to create LMDBer with reopen=false");
 
@@ -1161,4 +1313,207 @@ mod tests {
         assert!(!Path::new(&path_str).exists());
         assert!(!databaser.opened());
     }
+
+    #[test]
+    fn test_lmdb_basic_operations() -> Result<(), DBError> {
+        // Create a temporary LMDBer instance
+        let mut lmdber = LMDBer::builder()
+            .temp(true)
+            .build()?;
+
+        // Scope to ensure dber is dropped properly (similar to Python's with statement)
+        {
+            // Assert that temp is true
+            assert_eq!(lmdber.temp(), true);
+
+            // Define key and value
+            let key = b"A".to_vec();
+            let val = b"whatever".to_vec();
+
+            // Open a database named "beep."
+            let db = lmdber.env()
+                .expect("Environment should be available")
+                .create_db(Some("beep."), DatabaseFlags::empty())
+                .expect("Failed to open database");
+
+            // Test get_val on non-existent key
+            let result = lmdber.get_val(&db, &key)?;
+            assert_eq!(result, None);
+
+            // Test del_val on non-existent key
+            let result = lmdber.del_val(&db, &key)?;
+            assert_eq!(result, false);
+
+            // Test put_val (first time should return true)
+            let result = lmdber.put_val(&db, &key, &val)?;
+            assert_eq!(result, true);
+
+            // Test put_val again (second time should return false since key already exists)
+            let result = lmdber.put_val(&db, &key, &val)?;
+            assert_eq!(result, false);
+
+            // Test set_val (should return true as it overwrites)
+            let result = lmdber.set_val(&db, &key, &val)?;
+            assert_eq!(result, true);
+
+            // Test get_val to verify value was stored
+            let result = lmdber.get_val(&db, &key)?;
+            assert_eq!(result, Some(val.clone()));
+
+            // Test del_val to remove the key-value pair
+            let result = lmdber.del_val(&db, &key)?;
+            assert_eq!(result, true);
+
+            // Test get_val again to confirm deletion
+            let result = lmdber.get_val(&db, &key)?;
+            assert_eq!(result, None);
+        }
+
+
+        lmdber.close(true)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_top_item_iter_and_del_top_val() -> Result<(), DBError> {
+        // Create a temporary directory for the database
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().to_path_buf();
+
+        // Create a new LMDBer instance with a temporary database
+        let mut lmdber = LMDBer::new(
+            "test_db",
+            db_path.to_string_lossy().into_owned(),
+            true,           // temp
+            Some(db_path),  // head_dir_path
+            None,           // perm
+            false,          // reopen
+            true,           // clear
+            false,          // reuse
+            false,          // clean
+            false,          // filed
+            false,          // extensioned
+            None,           // mode
+            None,           // fext
+            false,          // readonly
+        )?;
+
+        // Create a test database
+        let env = lmdber.env.as_ref().unwrap();
+        let db = env.create_db(Some("test_db"), DatabaseFlags::empty())
+            .expect("Failed to open database");
+
+        // Insert test values
+        let key = b"a.1".to_vec();
+        let val = b"wow".to_vec();
+        assert!(lmdber.put_val(&db, &key, &val)?);
+
+        let key = b"a.2".to_vec();
+        let val = b"wee".to_vec();
+        assert!(lmdber.put_val(&db, &key, &val)?);
+
+        let key = b"b.1".to_vec();
+        let val = b"woo".to_vec();
+        assert!(lmdber.put_val(&db, &key, &val)?);
+
+        // Test get_top_item_iter to retrieve all items
+        let items: Result<Vec<(Vec<u8>, Vec<u8>)>, _> = lmdber
+            .get_top_item_iter(&db, b"")?
+            .collect();
+        let items = items?;
+
+        assert_eq!(
+            items,
+            vec![
+                (b"a.1".to_vec(), b"wow".to_vec()),
+                (b"a.2".to_vec(), b"wee".to_vec()),
+                (b"b.1".to_vec(), b"woo".to_vec()),
+            ]
+        );
+
+        // Test deleting values with a specific prefix
+        assert!(lmdber.del_top_val(&db, b"a.")?);
+
+        // Test get_top_item_iter after deletion
+        let items: Result<Vec<(Vec<u8>, Vec<u8>)>, _> = lmdber
+            .get_top_item_iter(&db, b"")?
+            .collect();
+        let items = items?;
+
+        assert_eq!(
+            items,
+            vec![
+                (b"b.1".to_vec(), b"woo".to_vec()),
+            ]
+        );
+
+        // Clean up
+        lmdber.close(true)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cnt() -> Result<(), DBError> {
+        // Create a temporary directory for the database
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().to_path_buf();
+
+        // Create a new LMDBer instance with a temporary database
+        let mut lmdber = LMDBer::new(
+            "test_db",
+            db_path.to_string_lossy().into_owned(),
+            true,           // temp
+            Some(db_path),  // head_dir_path
+            None,           // perm
+            false,          // reopen
+            true,           // clear
+            false,          // reuse
+            false,          // clean
+            false,          // filed
+            false,          // extensioned
+            None,           // mode
+            None,           // fext
+            false,          // readonly
+        )?;
+
+        // Create a test database with dupsort flag
+        let env = lmdber.env.as_ref().unwrap();
+        let db = env.create_db(Some("test_db"), DatabaseFlags::DUP_SORT)
+            .expect("Failed to open database");
+
+        // Test empty database count
+        assert_eq!(lmdber.cnt(&db)?, 0);
+
+        // Insert test values
+        let key = b"key1".to_vec();
+        let val1 = b"val1".to_vec();
+        let val2 = b"val2".to_vec();
+
+        assert!(lmdber.put_val(&db, &key, &val1)?);
+        assert!(lmdber.put_val(&db, &key, &val2)?);  // With DUP_SORT, we can have multiple values for the same key
+
+        // Test count after insertion
+        assert_eq!(lmdber.cnt(&db)?, 2);
+
+        // Add more items
+        let key2 = b"key2".to_vec();
+        let val3 = b"val3".to_vec();
+        assert!(lmdber.put_val(&db, &key2, &val3)?);
+
+        // Test count again
+        assert_eq!(lmdber.cnt(&db)?, 3);
+
+        // Delete items
+        assert!(lmdber.del_val(&db, &key)?);
+
+        // Test count after deletion
+        assert_eq!(lmdber.cnt(&db)?, 1);
+
+        // Clean up
+        lmdber.close(true)?;
+
+        Ok(())
+    }
+
 }
