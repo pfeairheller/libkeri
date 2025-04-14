@@ -32,6 +32,7 @@ async-trait = "0.1.88"
 lmdb = "0.8.0"  # Current stable version
 tempfile = "3.10.1"   # For temporary directory management
 dirs = "6.0.0"        # For home directory expansion
+heed = "0.22.0"
 
 
 

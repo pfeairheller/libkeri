@@ -516,14 +516,11 @@ impl LMDBer {
                 "Failed to create transaction: {}",
                 e
             )))?;
-            let mut cursor = txn.open_ro_cursor(*db);
+            let cursor = txn.open_ro_cursor(*db);
             let mut count = 0;
 
-            for result in cursor.iter() {
-                match result {
-                    Ok(_) => count += 1,
-                    Err(e) => return Err(DBError::DatabaseError(format!("{}", e))),
-                }
+            for _ in cursor.iter() {
+                count += 1;
             }
 
             Ok(count)
@@ -574,7 +571,7 @@ impl LMDBer {
                     let result = self.iter.next();
 
                     match result {
-                        Ok(Some((key, val))) => {
+                        Some((key, val)) => {
                             // Check if key starts with top prefix
                             if !key.starts_with(&self.top) {
                                 return None;
@@ -586,8 +583,7 @@ impl LMDBer {
 
                             Some(Ok((key_vec, val_vec)))
                         },
-                        Ok(None) => None,
-                        Err(e) => Some(Err(DBError::DatabaseError(e))),
+                        None => None
                     }
                 }
             }
@@ -615,22 +611,28 @@ impl LMDBer {
     ///           empty then deletes all items in database
     pub fn del_top_val(&self, db: &Database, top: &[u8]) -> Result<bool, DBError> {
         if let Some(env) = &self.env {
-            let mut txn = env.begin_rw_txn()?;
-            let mut cursor = txn.open_rw_cursor(*db).map_err(|e| DBError::DatabaseError(format!(
+            let mut txn = env.begin_rw_txn().map_err(|e| DBError::DatabaseError(format!(
                 "Failed to create transaction: {}",
+                e
+            )))?;
+            let mut cursor = txn.open_rw_cursor(*db).map_err(|e| DBError::DatabaseError(format!(
+                "Failed to open cursor: {}",
                 e
             )))?;
             let mut result = false;
 
-            if let Ok(Some((ckey, _))) = cursor.iter_from(top) {
+            if let Ok(Some((ckey, _))) = cursor.iter_from(top).next() {
                 if ckey.starts_with(top) {
                     result = true;
 
                     // Delete first matching entry
-                    cursor.del(WriteFlags::empty())?;
+                    cursor.del(WriteFlags::empty()).map_err(|e| DBError::DatabaseError(format!(
+                        "Failed to delete key: {}",
+                        e
+                    )))?;
 
                     // Delete subsequent matching entries
-                    while let Ok(Some((ckey, _))) = cursor.next() {
+                    while let Ok(Some((ckey, _))) = cursor.iter_start().next() {
                         if !ckey.starts_with(top) {
                             break;
                         }
