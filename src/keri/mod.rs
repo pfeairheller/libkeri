@@ -6,10 +6,8 @@ use crate::cesr::{int_to_b64, Versionage};
 use crate::cesr::b64_to_int;
 use crate::errors::MatterError;
 
-pub mod eventing;
-pub mod parsing;
-pub mod serdering;
-
+mod core;
+mod db;
 
 /// Format string for version
 pub const VERFMT: &str = "{}{:x}{:x}{}{:0{}x}_";

@@ -1976,7 +1976,7 @@ impl Serdery {
 mod tests {
     use crate::cesr::VRSN_1_0;
     use crate::keri::{Ilk, Kinds};
-    use crate::keri::serdering::{AttribField, BaseSerder, Sadder, Serder, SerderKERI};
+    use crate::keri::core::serdering::{AttribField, BaseSerder, Sadder, Serder, SerderKERI};
 
     #[test]
     fn test_valid_icp_event() {

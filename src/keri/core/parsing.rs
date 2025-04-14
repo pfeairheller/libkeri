@@ -1,7 +1,6 @@
 use crate::cesr::cigar::Cigar;
 use crate::cesr::counting::{ctr_dex_1_0, BaseCounter, Counter};
 use crate::cesr::dater::Dater;
-use crate::cesr::diger::Diger;
 use crate::cesr::indexing::siger::Siger;
 use crate::cesr::pather::Pather;
 use crate::cesr::prefixer::Prefixer;
@@ -11,7 +10,7 @@ use crate::cesr::texter::Texter;
 use crate::cesr::COLDS;
 use crate::cesr::{sniff, Parsable, Versionage, VRSN_1_0};
 use crate::errors::MatterError;
-use crate::keri::serdering::{Serder, SerderACDC, SerderKERI, Serdery};
+use crate::keri::core::serdering::{Serder, SerderACDC, SerderKERI, Serdery};
 use crate::keri::{Ilk, KERIError};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -251,10 +250,11 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
         }
     }
 
-    pub async fn parse_stream(&mut self) -> Result<(), KERIError> {
+    pub async fn parse_stream(&mut self, once: Option<bool>) -> Result<(), KERIError> {
         loop {
             // Read data asynchronously into buffer
             let mut chunk = vec![0u8; 4096];
+
             let n = self.reader.read(&mut chunk).await?;
             if n == 0 {
                 break; // EOF
@@ -263,8 +263,14 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
 
             // Process buffer into messages
             loop {
-                let (msg, consumed) = self.try_parse_message()?;
+                let (msg, _) = self.try_parse_message()?;
                 self.dispatch_message(msg).await?;
+                if self.buffer.len() == 0 {
+                    if once.unwrap_or(false) {
+                        return Ok(())
+                    }
+                    break;
+                }
             }
         }
         Ok(())
@@ -289,7 +295,7 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
                 let mut cigars: Vec<Cigar> = Vec::new();
                 let mut trqs: Vec<Trqs> = Vec::new();
                 let mut tsgs: Vec<Tsgs> = Vec::new();
-                let mut ssgs: Vec<(Ssgs)> = Vec::new();
+                let mut ssgs: Vec<Ssgs> = Vec::new();
                 let mut frcs: Vec<Frcs> = Vec::new();
                 let mut sscs: Vec<Sscs> = Vec::new();
                 let mut ssts: Vec<Ssts> = Vec::new();
@@ -1193,12 +1199,20 @@ impl<R: AsyncRead + Unpin + Send> Parser<R> {
 mod tests {
     use super::*;
 
-
-    struct MockHandler {}
+    struct MockHandler {
+        serder: Option<Box<dyn Serder>>,
+    }
 
     #[async_trait::async_trait]
     impl MessageHandler for MockHandler {
         async fn handle(&self, _msg: Message) -> Result<(), KERIError> {
+            let serder = match _msg {
+                Message::KeyEvent { serder, .. } => Some(Box::new(serder)),
+                _ => {None}
+            };
+            if serder.is_some() {
+                println!("{}", serder.unwrap().pretty(None));
+            }
             Ok(())
         }}
 
@@ -1207,16 +1221,18 @@ mod tests {
         // Provide CESR-encoded message bytes matching KERIpy tests
         let input = r#"{"v":"KERI10JSON00012b_","t":"icp","d":"EIcca2-uqsicYK7-q5gxlZXuzOkqrNSL3JIaLflSOOgF","i":"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx","s":"0","kt":"1","k":["DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx"],"nt":"1","n":["EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2"],"bt":"0","b":[],"c":[],"a":[]}-AABAAApXLez5eVIs6YyRXOMDMBy4cTm2GvsilrZlcMmtBbO5twLst_jjFoEyfKTWKntEtv9JPBv1DLkqg-ImDmGPM8E"#.as_bytes();
         let reader = tokio::io::BufReader::new(input);
+
         let handlers = Handlers {
-            kevery: Arc::new(MockHandler {}),
-            tevery: Arc::new(MockHandler {}),
-            exchanger: Arc::new(MockHandler {}),
-            revery: Arc::new(MockHandler {}),
-            verifier: Arc::new(MockHandler {}),
+            kevery: Arc::new(MockHandler {serder: None}),
+            tevery: Arc::new(MockHandler {serder: None}),
+            exchanger: Arc::new(MockHandler {serder: None}),
+            revery: Arc::new(MockHandler {serder: None}),
+            verifier: Arc::new(MockHandler {serder: None}),
             local: false,
         };
 
         let mut parser = Parser::new(reader, true, false, handlers);
-        assert!(parser.parse_stream().await.is_ok());
+        assert!(parser.parse_stream(Some(true)).await.is_ok());
+
     }
 }
