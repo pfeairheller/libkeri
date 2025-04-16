@@ -78,7 +78,7 @@ impl LMDBerBuilder {
 
 // Define our database type
 // Using a type alias for a database that stores bytes as both keys and values
-type BytesDatabase = Database<heed::types::Bytes, heed::types::Bytes>;
+pub type BytesDatabase = Database<heed::types::Bytes, heed::types::Bytes>;
 
 
 /// LMDBer is a wrapper around LMDB database providing an interface similar to Filer
