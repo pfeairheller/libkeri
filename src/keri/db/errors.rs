@@ -6,7 +6,7 @@ pub enum DBError {
     #[error("Invalid code: {0}")]
     CoreError(String),
 
-    #[error("DB IoError: {0}")]
+    #[error("I/O Error: {0}")]
     IoError(String),
 
     #[error("Filer Error: {0}")]
@@ -23,4 +23,12 @@ pub enum DBError {
 
     #[error("Parse error: {0}")]
     ParseError(String),
+
+    #[error("Environment error: {0}")]
+    EnvError(#[from] heed::Error),
+    #[error("Path error: {0}")]
+    PathError(String),
+    #[error("Operation on closed database")]
+    DbClosed,
+
 }

@@ -2,6 +2,7 @@ use crate::cesr::indexing::{idx_sig_dex, BaseIndexer, Indexer};
 use crate::cesr::Parsable;
 use crate::cesr::verfer::Verfer;
 use crate::errors::MatterError;
+use crate::Matter;
 
 ///  Cigar is Matter subclass holding a nonindexed signature with verfer property.
 ///  From Matter .raw is signature and .code is signature cipher suite
@@ -91,6 +92,56 @@ impl Indexer for Siger {
     fn full_size(&self) -> u32 { self.base.full_size() }
     fn index(&self) -> u32 { self.base.index() }
     fn ondex(&self) -> u32 { self.base.ondex() }
+}
+
+impl Matter for Siger {
+    fn code(&self) -> &str {
+        self.base.code()
+    }
+
+    fn raw(&self) -> &[u8] {
+        self.base.raw()
+    }
+
+    fn qb64(&self) -> String {
+        self.base.qb64()
+    }
+
+    fn qb64b(&self) -> Vec<u8> {
+        self.base.qb64b()
+    }
+
+    fn qb2(&self) -> Vec<u8> {
+        self.base.qb2()
+    }
+
+    fn soft(&self) -> &str {
+        ""
+    }
+
+    fn full_size(&self) -> usize {
+        self.base.full_size() as usize
+    }
+
+    fn size(&self) -> usize {
+        0
+    }
+
+    fn is_transferable(&self) -> bool {
+        false
+    }
+
+    fn is_digestive(&self) -> bool {
+        false
+    }
+
+    fn is_prefixive(&self) -> bool {
+        false
+    }
+
+    fn is_special(&self) -> bool {
+        false
+    }
 }
 
 

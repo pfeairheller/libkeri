@@ -1,0 +1,72 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ "**" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_test:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable]
+        include:
+          - os: ubuntu-latest
+            rust: nightly
+            allow-fail: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Install LMDB dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblmdb-dev
+
+      - name: Install LMDB dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install lmdb
+
+      # Windows should have what it needs bundled with the lmdb crate
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
+        run: cargo fmt --all -- --check
+
+      - name: Build
+        run: cargo build --verbose
+        continue-on-error: ${{ matrix.allow-fail || false }}
+
+      - name: Run tests
+        run: cargo test --verbose
+        continue-on-error: ${{ matrix.allow-fail || false }}
+
+      - name: Run clippy
+        if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
+        run: cargo clippy -- -D warnings
+
+      - name: Build documentation
+        if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
+        run: cargo doc --no-deps
+
+      # Optionally build for C integration
+      - name: Build C-compatible library
+        if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
+        run: cargo build --release --lib
