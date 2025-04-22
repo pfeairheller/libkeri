@@ -1,8 +1,10 @@
 use crate::errors::MatterError;
 use std::collections::HashMap;
-use base64::{Engine, engine::general_purpose};
+use base64::{engine::general_purpose, Engine};
 use once_cell::sync::Lazy;
 use std::{fmt, str};
+use std::any::Any;
+use std::fmt::Display;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
@@ -23,6 +25,7 @@ pub mod indexing;
 pub mod counting;
 pub mod tholder;
 pub mod pather;
+pub mod signing;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Versionage {
@@ -69,6 +72,49 @@ pub static B64_CHR_BY_IDX: Lazy<HashMap<u8, char>> = Lazy::new(|| {
 
     map
 });
+
+/// Security tiers for secret derivation
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Tiers {
+    /// Low security tier
+    LOW,
+    /// Medium security tier
+    MED,
+    /// High security tier
+    HIGH,
+}
+
+impl Tiers {
+    /// String value for the tier
+    pub const LOW: &'static str = "low";
+    /// String value for the tier
+    pub const MED: &'static str = "med";
+    /// String value for the tier
+    pub const HIGH: &'static str = "high";
+}
+
+impl From<&str> for Tiers {
+    fn from(s: &str) -> Self {
+        match s {
+            "low" => Tiers::LOW,
+            "med" => Tiers::MED,
+            "high" => Tiers::HIGH,
+            _ => Tiers::LOW, // Default to LOW for unrecognized values
+        }
+    }
+}
+
+impl Display for Tiers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Tiers::LOW => "low",
+            Tiers::MED => "med",
+            Tiers::HIGH => "high",
+        };
+        write!(f, "{}", str)
+    }
+}
+
 
 /// Maps Base64 character to corresponding index
 #[allow(dead_code)]
@@ -1177,7 +1223,7 @@ pub fn get_bards() -> HashMap<u8, i32> {
 
 /// Matter is a trait for fully qualified cryptographic material.
 /// Implementations provide various specialized crypto material types.
-pub trait Matter {
+pub trait Matter: Any {
     /// Returns the hard part of the derivation code
     fn code(&self) -> &str;
 
@@ -1213,6 +1259,8 @@ pub trait Matter {
 
     /// Returns whether the code represents a prefix
     fn is_special(&self) -> bool;
+
+    fn as_any(&self) -> &dyn Any;
 }
 
 /// Trait that must be implemented by types that can be parsed
@@ -1860,7 +1908,7 @@ pub fn int_to_b64(num: u32, length: usize) -> String {
     result
 }
 
-fn raw_size(code: &str) -> Result<usize, MatterError> {
+pub fn raw_size(code: &str) -> Result<usize, MatterError> {
     // Implementation would access self.sizes to get the raw size for this code
     // For this example, we'll return a placeholder
     // In the actual implementation, this would look up the size from the Sizes map
@@ -2060,6 +2108,10 @@ impl Matter for BaseMatter {
             Some(_) => size.ss > 0,
             None => false,
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

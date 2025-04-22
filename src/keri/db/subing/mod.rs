@@ -1,8 +1,10 @@
 mod cesr;
+mod signer;
 
 use std::marker::PhantomData;
 use std::fmt::Debug;
 use std::sync::Arc;
+use crate::errors::MatterError;
 use crate::keri::db::dbing::LMDBer;
 use crate::keri::db::dbing::BytesDatabase;
 use crate::keri::db::errors::DBError;
@@ -21,6 +23,21 @@ pub enum SuberError {
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
+
+    #[error("Encryption error: {0}")]
+    EncryptionError(String),
+
+    #[error("Encryption error: {0}")]
+    DecryptionError(String),
+
+    #[error("Verfer error: {0}")]
+    VerferError(String),
+
+    #[error("Mattere error: {0}")]
+    MatterError(#[from] MatterError),
+
+    #[error("Empty Keys")]
+    EmptyKeys,
 }
 
 // A trait for serialization/deserialization behavior
