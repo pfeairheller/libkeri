@@ -1,10 +1,10 @@
-use std::marker::PhantomData;
-use std::sync::Arc;
+use crate::cesr::Matter;
 use crate::cesr::Parsable;
-use crate::keri::db::dbing::{BytesDatabase, LMDBer};
+use crate::keri::db::dbing::LMDBer;
 use crate::keri::db::errors::DBError;
 use crate::keri::db::subing::{SuberBase, SuberError, ValueCodec};
-use crate::cesr::Matter;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
 // CesrCodec implements ValueCodec trait for CESR objects
 pub struct CesrCodec<T: Matter> {
@@ -38,6 +38,7 @@ pub struct CesrSuberBase<'db, M: Matter> {
     _matter_type: PhantomData<M>,
 }
 
+#[allow(dead_code)]
 impl<'db, M: Matter + Parsable> CesrSuberBase<'db, M> {
     pub fn new(
         db: Arc<&'db LMDBer>,
@@ -129,7 +130,10 @@ impl<'db, M: Matter + Parsable> CesrSuberBase<'db, M> {
     }
 
     // Add additional methods that would transform raw byte values into Matter instances
-    pub fn process_items(&self, items: Vec<(Vec<Vec<u8>>, Vec<u8>)>) -> Result<Vec<(Vec<Vec<u8>>, M)>, SuberError> {
+    pub fn process_items(
+        &self,
+        items: Vec<(Vec<Vec<u8>>, Vec<u8>)>,
+    ) -> Result<Vec<(Vec<Vec<u8>>, M)>, SuberError> {
         items
             .into_iter()
             .map(|(keys, val)| {
@@ -191,7 +195,10 @@ impl<'db, M: Matter + Parsable> CesrSuber<'db, M> {
         self.base.get_item_iter(keys, topive)
     }
 
-    pub fn process_items(&self, items: Vec<(Vec<Vec<u8>>, Vec<u8>)>) -> Result<Vec<(Vec<Vec<u8>>, M)>, SuberError> {
+    pub fn process_items(
+        &self,
+        items: Vec<(Vec<Vec<u8>>, Vec<u8>)>,
+    ) -> Result<Vec<(Vec<Vec<u8>>, M)>, SuberError> {
         self.base.process_items(items)
     }
 
@@ -200,25 +207,21 @@ impl<'db, M: Matter + Parsable> CesrSuber<'db, M> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use crate::cesr::{BaseMatter, Matter};
     use crate::cesr::diger::Diger;
     use crate::cesr::indexing::siger::Siger;
+    use crate::cesr::{BaseMatter, Matter};
     use crate::keri::db::dbing::LMDBer;
     use crate::keri::db::subing::cesr::CesrSuber;
 
     #[test]
     fn test_cesr_suber() -> Result<(), SuberError> {
         // Create a temporary database for testing
-        let lmdber = LMDBer::builder()
-            .name("test_db")
-            .temp(true)
-            .build()?;
+        let lmdber = LMDBer::builder().name("test_db").temp(true).build()?;
 
         // Create "seen." database
         assert_eq!(lmdber.name(), "test_db");
@@ -319,10 +322,9 @@ mod tests {
         // Convert the result to a format we can easily check
         let mut result_items = Vec::new();
         for (keys_vec, val) in processed_items {
-            let keys_tuple: Vec<String> = keys_vec.into_iter()
-                .map(|k| {
-                    String::from_utf8(k).unwrap()
-                })
+            let keys_tuple: Vec<String> = keys_vec
+                .into_iter()
+                .map(|k| String::from_utf8(k).unwrap())
                 .collect();
 
             result_items.push((keys_tuple, val.qb64()));
@@ -393,7 +395,8 @@ mod tests {
 
         let mut result_items = Vec::new();
         for (keys_vec, val) in processed_items {
-            let keys_tuple: Vec<String> = keys_vec.into_iter()
+            let keys_tuple: Vec<String> = keys_vec
+                .into_iter()
                 .map(|k| String::from_utf8(k).unwrap())
                 .collect();
 
@@ -422,7 +425,8 @@ mod tests {
 
         let mut result_items = Vec::new();
         for (keys_vec, val) in processed_items {
-            let keys_tuple: Vec<String> = keys_vec.into_iter()
+            let keys_tuple: Vec<String> = keys_vec
+                .into_iter()
                 .map(|k| String::from_utf8(k).unwrap())
                 .collect();
 
