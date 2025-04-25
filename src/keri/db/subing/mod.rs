@@ -1,4 +1,5 @@
 pub mod cesr;
+pub mod ioset;
 pub mod serder;
 pub mod signer;
 
@@ -55,6 +56,13 @@ pub trait ValueCodec {
 
 // Default implementation for UTF-8 string serialization/deserialization
 pub struct Utf8Codec;
+
+impl From<std::convert::Infallible> for SuberError {
+    fn from(_: std::convert::Infallible) -> Self {
+        // This code will never run because Infallible can't be created
+        unreachable!("This should never happen as Infallible cannot be instantiated")
+    }
+}
 
 impl ValueCodec for Utf8Codec {
     type Error = SuberError;
