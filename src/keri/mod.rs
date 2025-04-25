@@ -1,6 +1,8 @@
 use crate::cesr::b64_to_int;
 use crate::cesr::{int_to_b64, Versionage};
 use crate::errors::MatterError;
+use crate::keri::db::koming::KomerError;
+use crate::keri::db::subing::SuberError;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::fmt;
@@ -122,11 +124,29 @@ pub enum KERIError {
     #[error("Parsing Error: {0}")]
     Parsing(String),
 
+    #[error("Database Error: {0}")]
+    DatabaseError(String),
+
+    #[error("Manager Error: {0}")]
+    ManagerError(String),
+
+    #[error("Database Error: {0}")]
+    AuthError(String),
+
+    #[error("Database Error: {0}")]
+    DecryptError(String),
+
     #[error("Unsupported Message Version")]
     UnsupportedMessage,
 
     #[error("Invalid CESR Data")]
     InvalidCesrData,
+
+    #[error("Database suber error: {0}")]
+    SuberError(#[from] SuberError),
+
+    #[error("Database komer error: {0}")]
+    KomerError(#[from] KomerError),
 }
 
 impl From<MatterError> for KERIError {
