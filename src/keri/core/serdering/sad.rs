@@ -650,7 +650,7 @@ pub fn set_said_placeholders(sad: &mut Sadder, saids: Option<HashMap<&str, Strin
         "rot" | "drt" | "vrt" | "rev" | "brv" => {
             _saids.insert("d", mtr_dex::BLAKE3_256.to_string()); // Blake3_256
         }
-        "ixn" | "rct" => {
+        "ixn" => {
             _saids.insert("d", mtr_dex::BLAKE3_256.to_string()); // Blake3_256
         }
         "qry" | "rpy" | "pro" | "bar" | "exn" => {
@@ -909,7 +909,7 @@ pub fn default_with_type(ilk: Ilk, orig: &Sadder) -> Sadder {
         "rpy" => {
             sad.insert("dt".to_string(), get_string_or_empty(orig, "dt"));
             sad.insert("r".to_string(), get_string_or_empty(orig, "r"));
-            sad.insert("a".to_string(), get_array_or_empty(orig, "a"));
+            sad.insert("a".to_string(), get_object_or_empty(orig, "a"));
         }
         "pro" => {
             sad.insert("dt".to_string(), get_string_or_empty(orig, "dt"));
