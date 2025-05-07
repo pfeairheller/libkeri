@@ -7,7 +7,6 @@ use once_cell::sync::Lazy;
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::str::FromStr;
 use std::{fmt, str};
 
 pub mod bexter;
@@ -67,6 +66,13 @@ impl From<&str> for Versionage {
 }
 
 impl Versionage {
+    pub fn to_vec(&self) -> Vec<u8> {
+        let mut vec = Vec::new();
+        vec.push(self.major as u8);
+        vec.push(self.minor as u8);
+        vec
+    }
+
     /// Extracts version information from a KERI version string
     /// Expects string in format like "KERI10JSON000000_" where
     /// the first digit after KERI is the major version and the second is minor
@@ -312,6 +318,52 @@ pub fn sniff(ims: &[u8]) -> Result<&'static str, MatterError> {
         "Unexpected tritet={} at stream start.",
         tritet
     )))
+}
+
+#[allow(dead_code)]
+pub mod trait_dex {
+    use once_cell::sync::Lazy;
+    use std::collections::HashMap;
+
+    /// EstOnly - Only allow establishment events. Inception only.
+    pub const EST_ONLY: &str = "EO";
+
+    /// DoNotDelegate - Do not allow delegated identifiers. Inception only.
+    pub const DO_NOT_DELEGATE: &str = "DND";
+
+    /// RegistrarBackers - Registrar backer provided in Registrar seal in this event
+    pub const REGISTRAR_BACKERS: &str = "RB";
+
+    /// NoBackers - Do not allow any (registrar backers). Inception and Rotation in v2.
+    pub const NO_BACKERS: &str = "NB";
+
+    /// NoRegistrarBackers - Do not allow any registrar backers. Inception and Rotation.
+    pub const NO_REGISTRAR_BACKERS: &str = "NRB";
+
+    /// DelegateIsDelegator - Treat delegate AIDs same as their delegator. Inception only
+    pub const DELEGATE_IS_DELEGATOR: &str = "DID";
+
+    // Create a HashMap from name to value
+    pub static MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+        let mut map = HashMap::new();
+        map.insert("EST_ONLY", EST_ONLY);
+        map.insert("DO_NOT_DELEGATE", DO_NOT_DELEGATE);
+        map.insert("REGISTRAR_BACKERS", REGISTRAR_BACKERS);
+        map.insert("NO_BACKERS", NO_BACKERS);
+        map.insert("NO_REGISTRAR_BACKERS", NO_REGISTRAR_BACKERS);
+        map.insert("DELEGATE_IS_DELEGATOR", DELEGATE_IS_DELEGATOR);
+
+        map
+    });
+
+    pub static TUPLE: [&'static str; 6] = [
+        EST_ONLY,
+        DO_NOT_DELEGATE,
+        REGISTRAR_BACKERS,
+        NO_BACKERS,
+        NO_REGISTRAR_BACKERS,
+        DELEGATE_IS_DELEGATOR,
+    ];
 }
 
 /// Various derivation codes for Matter types

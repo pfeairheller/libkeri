@@ -1,4 +1,5 @@
 use crate::Matter;
+use std::collections::HashSet;
 use std::error::Error;
 
 use crate::cesr::cigar::Cigar;
@@ -8,13 +9,19 @@ use crate::keri::core::serdering::{Serder, SerderKERI};
 
 mod incept;
 mod interact;
+mod kever;
+mod kevery;
 mod query;
 mod receipt;
 mod reply;
 mod rotate;
+mod state;
 
 use crate::cesr::counting::{ctr_dex_1_0, BaseCounter, Counter};
 use crate::cesr::indexing::siger::Siger;
+use crate::cesr::indexing::Indexer;
+use crate::cesr::verfer::Verfer;
+use crate::keri::KERIError;
 pub use incept::*;
 
 // Determine threshold representations based on intive flag
@@ -233,6 +240,101 @@ pub fn messagize(
     msg.extend(atc);
 
     Ok(msg)
+}
+
+/// Verifies signatures against verifiers and returns verified signatures and their indices
+///
+/// Returns tuple of (vsigers, vindices) where:
+/// - vsigers is a list of unique verified sigers with assigned verfer
+/// - vindices is a list of indices from those verified sigers
+///
+/// The returned vsigers and vindices may be used for threshold validation
+///
+/// Assigns appropriate verfer from verfers to each siger based on siger index
+/// If no signatures verify then sigers and indices are empty
+///
+/// # Arguments
+///
+/// * `raw` - The signed data as bytes
+/// * `sigers` - A list of indexed Siger instances (signatures)
+/// * `verfers` - A list of Verfer instances (public keys)
+///
+/// # Returns
+///
+/// * `Result<(Vec<Siger>, Vec<usize>), KERIError>` - Tuple of verified sigers and their indices
+fn verify_sigs(
+    raw: &[u8],
+    sigers: Vec<Siger>,
+    verfers: &[Verfer],
+) -> Result<(Vec<Siger>, Vec<usize>), KERIError> {
+    if sigers.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+
+    // Create a set of unique signatures to avoid duplicates
+    // In Rust, we'll use a HashSet to collect unique sigers based on their qb64
+    let mut unique_signatures = HashSet::new();
+    let mut unique_sigers = Vec::new();
+
+    for siger in sigers {
+        let qb64 = siger.qb64();
+        if unique_signatures.insert(qb64) {
+            unique_sigers.push(siger);
+        }
+    }
+
+    // Create a vector to hold sigers with assigned verfers
+    let mut usigers_with_verfers = Vec::new();
+
+    // Assign verfers to each unique siger based on index
+    for mut siger in unique_sigers {
+        let index = siger.index() as usize;
+        if index >= verfers.len() {
+            // Log if index is out of bounds
+            continue;
+        }
+
+        // Clone the verfer and assign it to the siger
+        let verfer = verfers[index].clone();
+        siger.set_verfer(verfer);
+        usigers_with_verfers.push(siger);
+    }
+
+    // Create lists of verified sigers and their indices
+    let mut vindices = Vec::new();
+    let mut vsigers = Vec::new();
+
+    // Verify each siger and collect valid ones
+    for siger in usigers_with_verfers {
+        // Get verfer from siger - it should be present now
+        if let Some(verfer) = siger.verfer() {
+            // Verify the signature
+            match verfer.verify(siger.raw(), raw) {
+                Ok(true) => {
+                    // Signature verified successfully
+                    vindices.push(siger.index() as usize);
+                    vsigers.push(siger);
+                }
+                Ok(false) => {
+                    // Signature failed verification
+                    print!("Signature failed verification for index {}", siger.index());
+                }
+                Err(err) => {
+                    // Error during verification
+                    print!(
+                        "Error verifying signature at index {}: {:?}",
+                        siger.index(),
+                        err
+                    );
+                }
+            }
+        } else {
+            // This shouldn't happen if we properly assigned verfers above
+            print!("Siger missing verfer at index {}", siger.index());
+        }
+    }
+
+    Ok((vsigers, vindices))
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
-use crate::cesr::{pre_dex, BaseMatter, Parsable};
+use crate::cesr::dater::Dater;
+use crate::cesr::{mtr_dex, non_trans_dex, pre_dex, BaseMatter, Parsable};
 use crate::errors::MatterError;
 use crate::Matter;
 use std::any::Any;
@@ -9,7 +10,20 @@ pub struct Prefixer {
     base: BaseMatter,
 }
 
-impl Prefixer {}
+impl Prefixer {
+    pub fn from_qb64(qb64: &str) -> Result<Self, MatterError> {
+        let base = BaseMatter::from_qb64(qb64)?;
+        if !pre_dex::TUPLE.contains(&(base.code())) {
+            return Err(MatterError::UnsupportedCodeError(String::from(base.code())));
+        }
+
+        Ok(Prefixer { base })
+    }
+
+    pub fn transferable(&self) -> bool {
+        !non_trans_dex::TUPLE.contains(&self.base.code())
+    }
+}
 
 impl Matter for Prefixer {
     fn code(&self) -> &str {

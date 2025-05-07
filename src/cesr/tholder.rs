@@ -2,6 +2,7 @@ use crate::cesr::bexter::Bexter;
 use crate::cesr::number::Number;
 use crate::cesr::{bex_dex, num_dex, BaseMatter, Parsable};
 use crate::errors::MatterError;
+use crate::keri::core::serdering::SadValue;
 use crate::Matter;
 use num_rational::Rational32;
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,52 @@ pub enum TholderSith {
     Weights(Vec<WeightedSithElement>),
 }
 
+impl TholderSith {
+    pub fn from_sad_value(val: SadValue) -> Result<Self, MatterError> {
+        match val {
+            SadValue::Number(num) => Ok(TholderSith::Integer(num.as_u64().unwrap() as usize)),
+            SadValue::String(s) => {
+                if s.contains("[") {
+                    Ok(TholderSith::Json(s))
+                } else {
+                    Ok(TholderSith::HexString(s))
+                }
+            }
+            _ => Err(MatterError::ValueError(format!(
+                "invalid sith value: {:?}",
+                val
+            ))),
+        }
+    }
+}
+
+impl fmt::Display for TholderSith {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TholderSith::Integer(n) => write!(f, "{}", n),
+            TholderSith::HexString(s) => write!(f, "{}", s),
+            TholderSith::Json(s) => write!(f, "{}", s),
+            TholderSith::Weights(w) => {
+                // Format the weights as a JSON string
+                match serde_json::to_string(w) {
+                    Ok(json) => write!(f, "{}", json),
+                    Err(_) => write!(f, "<invalid weights>"),
+                }
+            }
+        }
+    }
+}
+
+// Also implement for the WeightedSithElement for completeness
+impl fmt::Display for WeightedSithElement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match serde_json::to_string(self) {
+            Ok(json) => write!(f, "{}", json),
+            Err(_) => write!(f, "<invalid weight element>"),
+        }
+    }
+}
+
 /// Represents the different elements that can appear in a weight clause
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -78,7 +125,7 @@ pub enum WeightedSithElement {
 }
 
 /// Represents the parsed threshold for calculating satisfaction
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TholderThold {
     /// Simple integer threshold
     Integer(usize),

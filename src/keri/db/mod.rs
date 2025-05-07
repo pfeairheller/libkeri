@@ -1,3 +1,4 @@
+pub mod basing;
 pub mod dbing;
 pub mod errors;
 pub mod koming;
