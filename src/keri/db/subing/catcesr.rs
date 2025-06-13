@@ -1,13 +1,17 @@
+use crate::cesr::cigar::Cigar;
 use crate::cesr::dater::Dater;
 use crate::cesr::diger::Diger;
 use crate::cesr::indexing::siger::Siger;
+use crate::cesr::number::Number;
+use crate::cesr::prefixer::Prefixer;
+use crate::cesr::saider::Saider;
 use crate::cesr::seqner::Seqner;
+use crate::cesr::verfer::Verfer;
 use crate::cesr::{BaseMatter, Parsable};
 use crate::keri::db::dbing::LMDBer;
 use crate::keri::db::subing::cesr::CesrSuberBase;
 use crate::keri::db::subing::{Suber, SuberError};
 use crate::Matter;
-use std::any::Any;
 use std::sync::Arc;
 
 pub struct CatCesrSuberBase<'db, M: Matter> {
@@ -40,18 +44,6 @@ impl<'db, M: Matter + Parsable> CatCesrSuberBase<'db, M> {
     /// but with specific logic for the supported format types
     pub fn ser(&self, val: &[&dyn Matter]) -> Result<Vec<u8>, SuberError> {
         match self.formats.as_slice() {
-            // Handle dater, seqner, diger format
-            [a, b, c] if a == "dater" && b == "seqner" && c == "diger" => {
-                // Validate we have exactly 3 values
-                if val.len() != 3 {
-                    return Err(SuberError::ValueConversionError(
-                        "Expected 3 values for dater, seqner, diger format".to_string(),
-                    ));
-                }
-
-                self.ser_from_dater_seqner_diger(val[0], val[1], val[2])
-            }
-
             // Handle siger format
             [a] if a == "siger" => {
                 // Validate we have exactly 1 value
@@ -73,6 +65,80 @@ impl<'db, M: Matter + Parsable> CatCesrSuberBase<'db, M> {
                 self.ser_from_siger(siger)
             }
 
+            // Handle seqner, saider format
+            [a, b] if a == "seqner" && b == "saider" => {
+                if val.len() != 2 {
+                    return Err(SuberError::ValueConversionError(
+                        "Expected 2 values for seqner saider format".to_string(),
+                    ));
+                }
+                self.ser_from_seqner_saider(val[0], val[1])
+            }
+
+            // Handle verfer, cigar format
+            [a, b] if a == "verfer" && b == "cigar" => {
+                if val.len() != 2 {
+                    return Err(SuberError::ValueConversionError(
+                        "Expected 2 values for verfer cigar format".to_string(),
+                    ));
+                }
+                self.ser_from_verfer_cigar(val[0], val[1])
+            }
+
+            // Handle number, saider format
+            [a, b] if a == "number" && b == "saider" => {
+                if val.len() != 2 {
+                    return Err(SuberError::ValueConversionError(
+                        "Expected 2 values for number saider format".to_string(),
+                    ));
+                }
+                self.ser_from_number_saider(val[0], val[1])
+            }
+
+            // Handle prefixer, seqner format
+            [a, b] if a == "prefixer" && b == "seqner" => {
+                if val.len() != 2 {
+                    return Err(SuberError::ValueConversionError(
+                        "Expected 2 values for prefixer seqner format".to_string(),
+                    ));
+                }
+                self.ser_from_prefixer_seqner(val[0], val[1])
+            }
+
+            // Handle seqner, diger format
+            [a, b] if a == "seqner" && b == "diger" => {
+                if val.len() != 2 {
+                    return Err(SuberError::ValueConversionError(
+                        "Expected 2 values for seqner diger format".to_string(),
+                    ));
+                }
+                self.ser_from_seqner_diger(val[0], val[1])
+            }
+
+            // Handle dater, seqner, diger format
+            [a, b, c] if a == "dater" && b == "seqner" && c == "diger" => {
+                // Validate we have exactly 3 values
+                if val.len() != 3 {
+                    return Err(SuberError::ValueConversionError(
+                        "Expected 3 values for dater, seqner, diger format".to_string(),
+                    ));
+                }
+
+                self.ser_from_dater_seqner_diger(val[0], val[1], val[2])
+            }
+
+            // Handle prefixer, seqner, saider format
+            [a, b, c] if a == "prefixer" && b == "seqner" && c == "saider" => {
+                // Validate we have exactly 3 values
+                if val.len() != 3 {
+                    return Err(SuberError::ValueConversionError(
+                        "Expected 3 values for prefixer, seqner, diger format".to_string(),
+                    ));
+                }
+
+                self.ser_from_prefixer_seqner_saider(val[0], val[1], val[2])
+            }
+
             // Default case - handle any Matter object
             _ => {
                 // Serialize directly using qb64b
@@ -85,13 +151,33 @@ impl<'db, M: Matter + Parsable> CatCesrSuberBase<'db, M> {
     /// but with specific logic for the supported format types
     pub fn des(&self, val: &[u8]) -> Result<Vec<Box<dyn Matter>>, SuberError> {
         match self.formats.as_slice() {
+            // Handle siger format
+            [a] if a == "siger" => self.des_to_siger(val),
+
+            // Handle seqner saider format
+            [a, b] if a == "seqner" && b == "saider" => self.des_to_seqner_saider(val),
+
+            // Handle seqner diger format
+            [a, b] if a == "seqner" && b == "diger" => self.des_to_seqner_diger(val),
+
+            // Handle verfer cigar format
+            [a, b] if a == "verfer" && b == "cigar" => self.des_to_verfer_cigar(val),
+
+            // Handle number saider format
+            [a, b] if a == "number" && b == "saider" => self.des_to_number_saider(val),
+
+            // Handle prefixer seqner format
+            [a, b] if a == "prefixer" && b == "seqner" => self.des_to_prefixer_seqner(val),
+
             // Handle dater, seqner, diger format
             [a, b, c] if a == "dater" && b == "seqner" && c == "diger" => {
                 self.des_to_dater_seqner_diger(val)
             }
 
-            // Handle siger format
-            [a] if a == "siger" => self.des_to_siger(val),
+            // Handle prefixer, seqner, saider format
+            [a, b, c] if a == "prefixer" && b == "seqner" && c == "saider" => {
+                self.des_to_prefixer_seqner_saider(val)
+            }
 
             // Default case - handle any Matter using BaseMatter
             _ => {
@@ -123,6 +209,176 @@ impl<'db, M: Matter + Parsable> CatCesrSuberBase<'db, M> {
 
         // Return as a vector of boxed Matter traits
         let result: Vec<Box<dyn Matter>> = vec![Box::new(siger)];
+
+        Ok(result)
+    }
+
+    /// Serializes from a tuple of (Seqner, Saider) to bytes
+    pub fn ser_from_seqner_saider(
+        &self,
+        seqner: &dyn Matter,
+        saider: &dyn Matter,
+    ) -> Result<Vec<u8>, SuberError> {
+        // Concatenate the qb64b of each instance
+        let mut result = Vec::new();
+        result.extend_from_slice(&seqner.qb64b());
+        result.extend_from_slice(&saider.qb64b());
+
+        Ok(result)
+    }
+
+    /// Deserializes from bytes to a tuple of (Seqner, Saider)
+    pub fn des_to_seqner_saider(&self, val: &[u8]) -> Result<Vec<Box<dyn Matter>>, SuberError> {
+        // Convert val to a mutable vector so we can use from_qb64b
+        let mut data = val.to_vec();
+
+        // Parse the Seqner
+        let seqner = Seqner::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Seqner: {}", e))
+        })?;
+
+        // Parse the Saider
+        let saider = Saider::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Saider: {}", e))
+        })?;
+
+        let result: Vec<Box<dyn Matter>> = vec![Box::new(seqner), Box::new(saider)];
+
+        Ok(result)
+    }
+
+    /// Serializes from a tuple of (Verfer, Cigar) to bytes
+    pub fn ser_from_verfer_cigar(
+        &self,
+        verfer: &dyn Matter,
+        cigar: &dyn Matter,
+    ) -> Result<Vec<u8>, SuberError> {
+        // Concatenate the qb64b of each instance
+        let mut result = Vec::new();
+        result.extend_from_slice(&verfer.qb64b());
+        result.extend_from_slice(&cigar.qb64b());
+
+        Ok(result)
+    }
+
+    /// Deserializes from bytes to a tuple of (Verfer, Cigar)
+    pub fn des_to_verfer_cigar(&self, val: &[u8]) -> Result<Vec<Box<dyn Matter>>, SuberError> {
+        // Convert val to a mutable vector so we can use from_qb64b
+        let mut data = val.to_vec();
+
+        // Parse the Verfer
+        let verfer = Verfer::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Verfer: {}", e))
+        })?;
+
+        // Parse the Cigar
+        let cigar = Cigar::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Cigar: {}", e))
+        })?;
+
+        let result: Vec<Box<dyn Matter>> = vec![Box::new(verfer), Box::new(cigar)];
+
+        Ok(result)
+    }
+
+    /// Serializes from a tuple of (Number, Saider) to bytes
+    pub fn ser_from_number_saider(
+        &self,
+        number: &dyn Matter,
+        saider: &dyn Matter,
+    ) -> Result<Vec<u8>, SuberError> {
+        // Concatenate the qb64b of each instance
+        let mut result = Vec::new();
+        result.extend_from_slice(&number.qb64b());
+        result.extend_from_slice(&saider.qb64b());
+
+        Ok(result)
+    }
+
+    /// Deserializes from bytes to a tuple of (Number, Saider)
+    pub fn des_to_number_saider(&self, val: &[u8]) -> Result<Vec<Box<dyn Matter>>, SuberError> {
+        // Convert val to a mutable vector so we can use from_qb64b
+        let mut data = val.to_vec();
+
+        // Parse the Number
+        let number = Number::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Number: {}", e))
+        })?;
+
+        // Parse the Saider
+        let saider = Saider::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Saider: {}", e))
+        })?;
+
+        let result: Vec<Box<dyn Matter>> = vec![Box::new(number), Box::new(saider)];
+
+        Ok(result)
+    }
+
+    /// Serializes from a tuple of (Prefixer, Seqner) to bytes
+    pub fn ser_from_prefixer_seqner(
+        &self,
+        prefixer: &dyn Matter,
+        seqner: &dyn Matter,
+    ) -> Result<Vec<u8>, SuberError> {
+        // Concatenate the qb64b of each instance
+        let mut result = Vec::new();
+        result.extend_from_slice(&prefixer.qb64b());
+        result.extend_from_slice(&seqner.qb64b());
+
+        Ok(result)
+    }
+
+    /// Deserializes from bytes to a tuple of (Prefixer, Seqner)
+    pub fn des_to_prefixer_seqner(&self, val: &[u8]) -> Result<Vec<Box<dyn Matter>>, SuberError> {
+        // Convert val to a mutable vector so we can use from_qb64b
+        let mut data = val.to_vec();
+
+        // Parse the Prefixer
+        let prefixer = Prefixer::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Prefixer: {}", e))
+        })?;
+
+        // Parse the Seqner
+        let seqner = Seqner::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Seqner: {}", e))
+        })?;
+
+        let result: Vec<Box<dyn Matter>> = vec![Box::new(prefixer), Box::new(seqner)];
+
+        Ok(result)
+    }
+
+    /// Serializes from a tuple of (Seqner, Diger) to bytes
+    pub fn ser_from_seqner_diger(
+        &self,
+        seqner: &dyn Matter,
+        diger: &dyn Matter,
+    ) -> Result<Vec<u8>, SuberError> {
+        // Concatenate the qb64b of each instance
+        let mut result = Vec::new();
+        result.extend_from_slice(&seqner.qb64b());
+        result.extend_from_slice(&diger.qb64b());
+
+        Ok(result)
+    }
+
+    /// Deserializes from bytes to a tuple of (Seqner, Diger)
+    pub fn des_to_seqner_diger(&self, val: &[u8]) -> Result<Vec<Box<dyn Matter>>, SuberError> {
+        // Convert val to a mutable vector so we can use from_qb64b
+        let mut data = val.to_vec();
+
+        // Parse the Seqner
+        let seqner = Seqner::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Seqner: {}", e))
+        })?;
+
+        // Parse the Diger
+        let diger = Diger::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Diger: {}", e))
+        })?;
+
+        let result: Vec<Box<dyn Matter>> = vec![Box::new(seqner), Box::new(diger)];
 
         Ok(result)
     }
@@ -167,6 +423,51 @@ impl<'db, M: Matter + Parsable> CatCesrSuberBase<'db, M> {
         })?;
 
         let result: Vec<Box<dyn Matter>> = vec![Box::new(dater), Box::new(seqner), Box::new(diger)];
+
+        Ok(result)
+    }
+
+    /// Serializes from a tuple of (Dater, Seqner, Diger) to bytes
+    pub fn ser_from_prefixer_seqner_saider(
+        &self,
+        prefixer: &dyn Matter,
+        seqner: &dyn Matter,
+        saider: &dyn Matter,
+    ) -> Result<Vec<u8>, SuberError> {
+        // Concatenate the qb64b of each instance
+        let mut result = Vec::new();
+        result.extend_from_slice(&prefixer.qb64b());
+        result.extend_from_slice(&seqner.qb64b());
+        result.extend_from_slice(&saider.qb64b());
+
+        Ok(result)
+    }
+
+    /// Deserializes from bytes to a tuple of (Dater, Seqner, Diger)
+    pub fn des_to_prefixer_seqner_saider(
+        &self,
+        val: &[u8],
+    ) -> Result<Vec<Box<dyn Matter>>, SuberError> {
+        // Convert val to a mutable vector so we can use from_qb64b
+        let mut data = val.to_vec();
+
+        // Parse the Prefixer
+        let prefixer = Prefixer::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse prefixer: {}", e))
+        })?;
+
+        // Parse the Seqner
+        let seqner = Seqner::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse Seqner: {}", e))
+        })?;
+
+        // Parse the Saider
+        let saider = Saider::from_qb64b(&mut data, Some(true)).map_err(|e| {
+            SuberError::DeserializationError(format!("Failed to parse saider: {}", e))
+        })?;
+
+        let result: Vec<Box<dyn Matter>> =
+            vec![Box::new(prefixer), Box::new(seqner), Box::new(saider)];
 
         Ok(result)
     }
@@ -306,11 +607,14 @@ mod tests {
     use crate::cesr::dater::Dater;
     use crate::cesr::diger::Diger;
     use crate::cesr::indexing::siger::Siger;
+    use crate::cesr::prefixer::Prefixer;
+    use crate::cesr::saider::Saider;
     use crate::cesr::seqner::Seqner;
     use crate::cesr::{BaseMatter, Matter, Parsable};
     use crate::keri::db::dbing::LMDBerBuilder;
     use crate::keri::db::subing::catcesr::CatCesrSuber;
     use crate::keri::db::subing::SuberError;
+
     use std::sync::Arc;
 
     #[test]
@@ -324,6 +628,178 @@ mod tests {
 
         assert_eq!(db.name(), "test");
         assert!(db.opened());
+
+        {
+            // Test Seqner Saider format
+            let db_ref = Arc::new(&db);
+            let sdb = CatCesrSuber::<BaseMatter>::new(
+                db_ref.clone(),
+                "ssdb.",
+                vec!["seqner".to_string(), "saider".to_string()],
+                None,
+                false,
+            )?;
+
+            // Create test data
+            let seqner = Seqner::from_sn(42);
+            let seqb = seqner.qb64b();
+            assert_eq!(seqb, b"0AAAAAAAAAAAAAAAAAAAAAAq");
+
+            let saider = Saider::from_qb64("EAWY-bDoF3C0LXQBcMNKNnZJNyjRFwzPF6QUQPfBRT7x").unwrap();
+            let saidb = saider.qb64b();
+
+            // Test serialization and deserialization
+            let vals: Vec<&dyn Matter> = vec![&seqner, &saider];
+
+            // Use the CatCesrSuber methods directly through the base
+            let valb = sdb.base.ser(&vals)?;
+            assert_eq!(valb, [&seqb[..], &saidb[..]].concat());
+
+            // Test deserialization
+            let des_result = sdb.base.des(&valb)?;
+            let des_values = des_result;
+
+            // Verify we got 2 Matters back and can be downcast to expected types
+            assert_eq!(des_values.len(), 2);
+
+            let des_seqner = des_values[0].as_any().downcast_ref::<Seqner>().unwrap();
+            let des_saider = des_values[1].as_any().downcast_ref::<Saider>().unwrap();
+
+            assert_eq!(des_seqner.qb64b(), seqner.qb64b());
+            assert_eq!(des_saider.qb64b(), saider.qb64b());
+
+            // Verify concat of all qb64b equals original serialized value
+            let combined = [&des_seqner.qb64b()[..], &des_saider.qb64b()[..]].concat();
+            assert_eq!(combined, valb);
+
+            // Test database operations
+            let keys = ["witness", "receipt"];
+
+            // Test put and get
+            assert!(sdb.put(&keys, &vals)?);
+            let actuals = sdb.get(&keys)?;
+            assert!(actuals.is_some());
+
+            let actuals = actuals.unwrap();
+            assert_eq!(actuals.len(), 2);
+
+            let retrieved_seqner = actuals[0].as_any().downcast_ref::<Seqner>().unwrap();
+            let retrieved_saider = actuals[1].as_any().downcast_ref::<Saider>().unwrap();
+
+            assert_eq!(retrieved_seqner.qb64b(), seqner.qb64b());
+            assert_eq!(retrieved_saider.qb64b(), saider.qb64b());
+
+            // Test removal
+            assert!(sdb.rem(&keys)?);
+            let actuals = sdb.get(&keys)?;
+            assert!(actuals.is_none());
+        }
+
+        {
+            // Test Prefixer Seqner Saider format
+            let db_ref = Arc::new(&db);
+            let sdb = CatCesrSuber::<BaseMatter>::new(
+                db_ref.clone(),
+                "pssdb.",
+                vec![
+                    "prefixer".to_string(),
+                    "seqner".to_string(),
+                    "saider".to_string(),
+                ],
+                None,
+                false,
+            )?;
+
+            // Create test data
+            let prefixer =
+                Prefixer::from_qb64("BDzwEHHzq7K0gzQPYGGwTmuupUhPx5_yZ-Wk1x4ejhcc").unwrap();
+            let preb = prefixer.qb64b();
+
+            let seqner = Seqner::from_sn(99);
+            let seqb = seqner.qb64b();
+            assert_eq!(seqb, b"0AAAAAAAAAAAAAAAAAAAAABj");
+
+            let saider = Saider::from_qb64("EAWY-bDoF3C0LXQBcMNKNnZJNyjRFwzPF6QUQPfBRT7x").unwrap();
+            let saidb = saider.qb64b();
+
+            // Test serialization and deserialization
+            let vals: Vec<&dyn Matter> = vec![&prefixer, &seqner, &saider];
+
+            // Use the CatCesrSuber methods directly through the base
+            let valb = sdb.base.ser(&vals)?;
+            assert_eq!(valb, [&preb[..], &seqb[..], &saidb[..]].concat());
+
+            // Test deserialization
+            let des_result = sdb.base.des(&valb)?;
+            let des_values = des_result;
+
+            // Verify we got 3 Matters back and can be downcast to expected types
+            assert_eq!(des_values.len(), 3);
+
+            let des_prefixer = des_values[0].as_any().downcast_ref::<Prefixer>().unwrap();
+            let des_seqner = des_values[1].as_any().downcast_ref::<Seqner>().unwrap();
+            let des_saider = des_values[2].as_any().downcast_ref::<Saider>().unwrap();
+
+            assert_eq!(des_prefixer.qb64b(), prefixer.qb64b());
+            assert_eq!(des_seqner.qb64b(), seqner.qb64b());
+            assert_eq!(des_saider.qb64b(), saider.qb64b());
+
+            // Verify concat of all qb64b equals original serialized value
+            let combined = [
+                &des_prefixer.qb64b()[..],
+                &des_seqner.qb64b()[..],
+                &des_saider.qb64b()[..],
+            ]
+            .concat();
+            assert_eq!(combined, valb);
+
+            // Test database operations
+            let keys = ["delegate", "anchor"];
+
+            // Test put and get
+            assert!(sdb.put(&keys, &vals)?);
+            let actuals = sdb.get(&keys)?;
+            assert!(actuals.is_some());
+
+            let actuals = actuals.unwrap();
+            assert_eq!(actuals.len(), 3);
+
+            let retrieved_prefixer = actuals[0].as_any().downcast_ref::<Prefixer>().unwrap();
+            let retrieved_seqner = actuals[1].as_any().downcast_ref::<Seqner>().unwrap();
+            let retrieved_saider = actuals[2].as_any().downcast_ref::<Saider>().unwrap();
+
+            assert_eq!(retrieved_prefixer.qb64b(), prefixer.qb64b());
+            assert_eq!(retrieved_seqner.qb64b(), seqner.qb64b());
+            assert_eq!(retrieved_saider.qb64b(), saider.qb64b());
+
+            // Test pin (overwrite) operation
+            let new_prefixer =
+                Prefixer::from_qb64("BHHzqZWzwE-Wk7K0gzQPYGGwTmuupUhPx5_y1x4ejhcc").unwrap();
+            let new_seqner = Seqner::from_sn(100);
+            let new_saider =
+                Saider::from_qb64("EBJPik4FxfCl-FFsSyGhHpO1VdRQTqIFr11JrYJBSBVk").unwrap();
+
+            let new_vals: Vec<&dyn Matter> = vec![&new_prefixer, &new_seqner, &new_saider];
+
+            // Pin should overwrite
+            assert!(sdb.pin(&keys, &new_vals)?);
+
+            let actuals = sdb.get(&keys)?.unwrap();
+            assert_eq!(actuals.len(), 3);
+
+            let retrieved_prefixer = actuals[0].as_any().downcast_ref::<Prefixer>().unwrap();
+            let retrieved_seqner = actuals[1].as_any().downcast_ref::<Seqner>().unwrap();
+            let retrieved_saider = actuals[2].as_any().downcast_ref::<Saider>().unwrap();
+
+            assert_eq!(retrieved_prefixer.qb64b(), new_prefixer.qb64b());
+            assert_eq!(retrieved_seqner.qb64b(), new_seqner.qb64b());
+            assert_eq!(retrieved_saider.qb64b(), new_saider.qb64b());
+
+            // Test removal
+            assert!(sdb.rem(&keys)?);
+            let actuals = sdb.get(&keys)?;
+            assert!(actuals.is_none());
+        }
 
         {
             // Test Single Matter type
