@@ -1,6 +1,7 @@
 use crate::cesr::b64_to_int;
 use crate::cesr::{int_to_b64, Versionage};
 use crate::errors::MatterError;
+use crate::keri::db::errors::DBError;
 use crate::keri::db::koming::KomerError;
 use crate::keri::db::subing::SuberError;
 use once_cell::sync::Lazy;
@@ -121,6 +122,9 @@ pub enum KERIError {
     #[error("IO Error")]
     Io(#[from] std::io::Error),
 
+    #[error("DBError")]
+    DBError(#[from] DBError),
+
     #[error("Parsing Error: {0}")]
     Parsing(String),
 
@@ -162,6 +166,12 @@ pub enum KERIError {
 
     #[error("Unverified witness receipt event error: {0}")]
     UnverifiedWitnessReceiptError(String),
+
+    #[error("Unverified receipt event error: {0}")]
+    UnverifiedReceiptError(String),
+
+    #[error("Query not found error: {0}")]
+    QueryNotFoundError(String),
 }
 
 impl From<MatterError> for KERIError {
