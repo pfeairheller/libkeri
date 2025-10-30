@@ -3,8 +3,8 @@ name = "libkeri"
 version = "0.1.0"
 edition = "2021"
 description = "A Rust library for KERI (Key Event Receipt Infrastructure)"
-authors = ["Your Name <your.email@example.com>"]
-license = "MIT OR Apache-2.0"
+authors = ["Phil Feairheller <phil@healthKERI.com>"]
+license = "Apache-2.0"
 
 [dependencies]
 blake3 = "1.6.1"
