@@ -25,6 +25,12 @@ impl Dater {
         Dater { base }
     }
 
+    pub fn from_dts(dts: &str) -> Result<Self, MatterError> {
+        let raw = dts.as_bytes();
+        let base = BaseMatter::new(Some(raw), Some(mtr_dex::DATE_TIME), None, None)?;
+        Ok(Dater { base })
+    }
+
     pub fn new(
         raw: Option<&[u8]>,
         code: Option<&str>,
